@@ -1,118 +1,38 @@
-const contextValue = document.getElementById('contextValue');
-const gestureValue = document.getElementById('gestureValue');
-const phraseValue = document.getElementById('phraseValue');
-const errorBox = document.getElementById('errorBox');
-const trainBtn = document.getElementById('trainBtn');
-const contextButtons = [...document.querySelectorAll('.btn-context')];
+const fields = {
+  state: document.getElementById('state'),
+  camera: document.getElementById('camera'),
+  input: document.getElementById('input'),
+  speech: document.getElementById('speech'),
+  candidates: document.getElementById('candidates'),
+  final: document.getElementById('final'),
+};
 
-function setError(message = '') {
-  errorBox.textContent = message;
+function render(data) {
+  fields.state.textContent = data.state;
+  fields.camera.textContent = data.camera;
+  fields.input.textContent = data.input;
+  fields.speech.textContent = data.speech_available ? 'available' : 'unavailable';
+  fields.candidates.textContent = data.candidates.length ? data.candidates.join(', ') : '-';
+  fields.final.textContent = data.final_message || '-';
 }
 
-function setActiveContext(contextName) {
-  contextButtons.forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.context === contextName);
+async function refresh() {
+  const res = await fetch('/state');
+  render(await res.json());
+}
+
+async function sendEvent(name) {
+  const res = await fetch('/simulate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: name }),
   });
+  render(await res.json());
 }
 
-async function refreshState() {
-  try {
-    const res = await fetch('/get_state');
-    const data = await res.json();
-
-    contextValue.textContent = data.context;
-    gestureValue.textContent = data.gesture;
-    phraseValue.textContent = data.phrase;
-    setActiveContext(data.context);
-
-  } catch (err) {
-    setError(err.message);
-  }
-}
-
-async function setContext(contextName) {
-  setError('');
-  try {
-    const res = await fetch('/set_context', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context: contextName }),
-    });
-
-    await refreshState();
-
-  } catch (err) {
-    setError(err.message);
-  }
-}
-
-async function trainGesture() {
-  setError('');
-
-  // 🔥 STEP 1: Capture gesture immediately
-  try {
-    const res = await fetch('/capture_landmarks');
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error);
-
-  } catch (err) {
-    setError("❌ No hand detected. Show gesture properly.");
-    return;
-  }
-
-  // 🔥 STEP 2: Now ask inputs
-  const gestureName = prompt('Enter gesture name:');
-  if (!gestureName || !gestureName.trim()) {
-    setError("❌ Gesture name required");
-    return;
-  }
-
-  const cafeMsg = prompt('Cafe message:');
-  if (cafeMsg === null) return;
-
-  const hospitalMsg = prompt('Hospital message:');
-  if (hospitalMsg === null) return;
-
-  const collegeMsg = prompt('College message:');
-  if (collegeMsg === null) return;
-
-  const bankMsg = prompt('Bank message:');
-  if (bankMsg === null) return;
-
-  // 🔥 STEP 3: Send training request
-  try {
-    const res = await fetch('/train', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        gesture_name: gestureName.trim(),
-        messages: {
-          cafe: cafeMsg.trim(),
-          hospital: hospitalMsg.trim(),
-          college: collegeMsg.trim(),
-          bank: bankMsg.trim()
-        }
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error);
-
-    setError(`✅ Gesture trained: ${data.gesture_name}`);
-
-  } catch (err) {
-    setError("❌ Training failed");
-  }
-}
-
-
-trainBtn.addEventListener('click', trainGesture);
-
-contextButtons.forEach((btn) => {
-  btn.addEventListener('click', () => setContext(btn.dataset.context));
+document.querySelectorAll('button[data-event]').forEach((btn) => {
+  btn.addEventListener('click', () => sendEvent(btn.dataset.event));
 });
 
-refreshState();
-setInterval(refreshState, 500);
+refresh();
+setInterval(refresh, 1000);

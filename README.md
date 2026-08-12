@@ -1,130 +1,84 @@
-# Assistive Technology – GestureTalk
+# ADAPT-AAC
 
-## 🚀 Overview
+Adaptive, Confidence- and Effort-Aware Augmentative Communication.
 
-GestureTalk is a real-time gesture-to-speech system that converts hand gestures into spoken phrases using computer vision and AI. It is designed to assist individuals with speech impairments by enabling seamless communication in everyday environments.
+The research idea is **confidence- and interaction-cost-aware adaptive selection
+between predictive communication and conventional AAC**: instead of forcing every
+message through one interaction method, the system routes high-confidence
+predictions to a quick confirmation, medium-confidence ones to a short list of
+choices, and low-confidence ones to a conventional AAC fallback — and the user
+always confirms before anything is spoken.
 
-## ❗ Problem Statement
+This repository is being built in stages. **Stage 1 is the foundation only** — it
+sets up the architecture and the safety boundary so later stages can add ocular
+input, prediction, confidence, and the adaptive policy cleanly.
 
-People with speech or hearing impairments often struggle with real-time communication in places like hospitals, cafes, and colleges. Existing solutions are either expensive or not intuitive. This project provides a low-cost, real-time alternative using only a camera and AI-based hand tracking.
+## Safety invariant
 
----
+`prediction != confirmation` and `unconfirmed prediction != speech`.
 
-## 🛠️ Tech Stack
+This is enforced in the architecture, not just the UI:
 
-* Python
-* Flask
-* OpenCV
-* MediaPipe
-* NumPy
-* pyttsx3
-* HTML, CSS, JavaScript
+- The predictor, camera and input modules never import the speaker, so they
+  cannot reach speech.
+- `Speaker.speak()` accepts only a `ConfirmedMessage`, never raw text.
+- A `ConfirmedMessage` can only be produced by `CommunicationSession.confirm()`,
+  which requires a confirm-capable state (guarded by a private key).
+- The state machine forbids reaching `SPEAKING` except through
+  `CONFIRM/CHOICE/FALLBACK -> READY_TO_SPEAK -> SPEAKING`.
 
----
+## Structure
 
-## ⚙️ Setup Instructions
+```
+app.py            Flask app (thin routes)
+config.py         the few values Stage 1 uses
+controller.py     wires input events -> state machine -> (confirmed) speech
+events.py         InputEvent + simulated-event helper
+storage.py        minimal local JSON storage
 
-### 1. Create Virtual Environment
+vision/camera.py      camera abstraction (no hardware on import)
+prediction/predictor.py   prediction interface (development stub)
+adaptive/policy.py        adaptive policy (stub interface, Stage 6)
+aac/state.py              communication state machine + session
+aac/fallback.py           conventional AAC boundary (Stage 3)
+speech/tts.py             speaks only confirmed messages
+research/logging.py       research logging boundary (Stage 8)
 
-```bash
-python -m venv venv311
-venv311\Scripts\activate
+templates/, static/   temporary development UI
+tests/                foundation tests
 ```
 
-### 2. Fix MediaPipe Compatibility
-
-MediaPipe may not support the latest Python versions.
-
-👉 Use:
-
-* Python **3.10 or 3.11**
-
-Check:
-
-```bash
-python --version
-```
-
----
-
-### 3. Install Dependencies
+## Run
 
 ```bash
 pip install -r requirements.txt
+python app.py            # http://localhost:5000
 ```
 
----
+The app starts with **no camera**. The development UI runs in
+`DEVELOPMENT / SIMULATION MODE` and lets you drive the state machine with
+simulated `BLINK / SELECT / CONFIRM / REJECT / CANCEL` events. This is not real
+ocular detection — that arrives in Stage 2.
 
-### 4. Run the App
+## Test
 
 ```bash
-python app.py
+pip install -r requirements-dev.txt
+python -m pytest
 ```
 
-Open in browser:
+## Component status
 
-```
-http://localhost:5000
-```
-
----
-
-## 📂 Project Structure
-
-```
-app.py
-camera.py
-gestures.py
-tts.py
-config.py
-templates/
-static/
-requirements.txt
-```
-
----
-
-## 💡 Features
-
-* Real-time hand gesture recognition
-* Context-based phrase mapping (cafe, hospital, etc.)
-* Text-to-speech output
-* Custom gesture training
-* Live dashboard with status updates
-
----
-
-## 🔧 Git Fix (Learning Highlight)
-
-Large files (like virtual environments) were accidentally pushed and later removed by:
-
-```bash
-rmdir /s /q .git
-git init
-git branch -M main
-
-echo venv311/ >> .gitignore
-echo __pycache__/ >> .gitignore
-echo *.pyc >> .gitignore
-echo *.pyd >> .gitignore
-echo *.dll >> .gitignore
-
-git add .
-git commit -m "Clean project upload"
-git remote add origin https://github.com/Blueundead24/Assistive-technology.git
-git push -u origin main --force
-```
-
----
-
-## 🎯 Future Improvements
-
-* Mobile application version
-* Multi-language speech support
-* Pre-trained gesture dataset
-* Cloud deployment
-
-### 🆕 Recent Updates
-- Added stable gesture capture before training
-- Fixed unreliable live training issue
-- Improved camera handling (webcam support)
+| Component | Status |
+|-----------|--------|
+| Communication state machine | implemented |
+| Simulated input + events | implemented |
+| Camera abstraction | implemented (capture only) |
+| Speech (confirmed-only) | implemented |
+| Local JSON storage | implemented |
+| Prediction | stub |
+| Adaptive policy | stub interface only |
+| Conventional AAC fallback | not implemented (Stage 3) |
+| Ocular input / blink / gaze / calibration | not implemented (Stage 2) |
+| Confidence / interaction cost | not implemented |
+| Research logging / baseline | not implemented (Stage 8) |

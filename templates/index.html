@@ -3,50 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GestureTalk – Speak with a Wave</title>
+  <title>ADAPT-AAC — Development</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <main class="container">
-    <section class="panel">
-      <h1>GestureTalk – Speak with a Wave</h1>
-      <p class="subtitle">Train custom gestures, switch context, and speak offline in real time.</p>
+  <main class="wrap">
+    <h1>ADAPT-AAC</h1>
+    <p class="mode">DEVELOPMENT / SIMULATION MODE</p>
 
-      <div class="video-wrap">
-        <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed" />
-      </div>
-
-      <div class="controls">
-        <button id="trainBtn" class="btn-train">Train Current Gesture</button>
-      </div>
-
-      <div class="contexts" id="contextButtons">
-        {% for ctx in contexts %}
-        <button class="btn-context" data-context="{{ ctx }}">{{ ctx|capitalize }}</button>
-        {% endfor %}
-      </div>
-
-      <p id="errorBox" class="error"></p>
+    <section class="status">
+      <div class="row"><span>State</span><b id="state">-</b></div>
+      <div class="row"><span>Camera</span><b id="camera">-</b></div>
+      <div class="row"><span>Input</span><b id="input">-</b></div>
+      <div class="row"><span>Speech</span><b id="speech">-</b></div>
+      <div class="row"><span>Candidates</span><b id="candidates">-</b></div>
+      <div class="row"><span>Final message</span><b id="final">-</b></div>
     </section>
 
-    <aside class="panel">
-      <h2>Live Status</h2>
-      <div class="card">
-        <div class="label">Current Context</div>
-        <div class="value" id="contextValue">-</div>
+    <section class="sim">
+      <p class="hint">Simulated input (not real ocular detection):</p>
+      <div class="buttons">
+        <button data-event="BLINK">Blink</button>
+        <button data-event="SELECT">Select</button>
+        <button data-event="CONFIRM">Confirm</button>
+        <button data-event="REJECT">Reject</button>
+        <button data-event="CANCEL">Cancel</button>
       </div>
-      <div class="card">
-        <div class="label">Detected Gesture</div>
-        <div class="value" id="gestureValue">-</div>
-      </div>
-      <div class="card">
-        <div class="label">Spoken Phrase</div>
-        <div class="value" id="phraseValue">-</div>
-      </div>
-    </aside>
+    </section>
   </main>
 
-  <!-- ✅ IMPORTANT FIX: add defer -->
   <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </body>
 </html>
