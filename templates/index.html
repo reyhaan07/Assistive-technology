@@ -9,19 +9,53 @@
 <body>
   <main class="wrap">
     <h1>ADAPT-AAC</h1>
-    <p class="mode">DEVELOPMENT / SIMULATION MODE</p>
+    <p class="mode">DEVELOPMENT MODE — <span id="modeLabel">SIMULATION</span></p>
 
-    <section class="status">
+    <section class="panel">
+      <p class="hint">Input source</p>
+      <div class="buttons">
+        <button data-mode="simulation" class="mode-btn">Simulation</button>
+        <button data-mode="ocular" class="mode-btn">Ocular (webcam)</button>
+      </div>
+      <p id="modeError" class="error"></p>
+    </section>
+
+    <section class="panel status">
       <div class="row"><span>State</span><b id="state">-</b></div>
-      <div class="row"><span>Camera</span><b id="camera">-</b></div>
       <div class="row"><span>Input</span><b id="input">-</b></div>
+      <div class="row"><span>Camera</span><b id="camera">-</b></div>
       <div class="row"><span>Speech</span><b id="speech">-</b></div>
       <div class="row"><span>Candidates</span><b id="candidates">-</b></div>
       <div class="row"><span>Final message</span><b id="final">-</b></div>
     </section>
 
-    <section class="sim">
-      <p class="hint">Simulated input (not real ocular detection):</p>
+    <section id="ocularPanel" class="panel hidden">
+      <div class="video-wrap"><img id="videoFeed" alt="camera preview" /></div>
+
+      <label class="check"><input type="checkbox" id="debugToggle" /> Debug mode</label>
+
+      <div id="debugPanel" class="status hidden">
+        <div class="row"><span>Face</span><b id="oFace">-</b></div>
+        <div class="row"><span>EAR</span><b id="oEar">-</b></div>
+        <div class="row"><span>Blink phase</span><b id="oPhase">-</b></div>
+        <div class="row"><span>Input reliability</span><b id="oRel">-</b></div>
+        <div class="row"><span>Gaze (experimental)</span><b id="oGaze">-</b></div>
+        <div class="row"><span>Natural / Intentional</span><b id="oCounts">-</b></div>
+        <div class="row"><span>Calibrated</span><b id="oCal">-</b></div>
+      </div>
+
+      <p class="hint">Calibration</p>
+      <div class="buttons">
+        <button data-phase="baseline">1. Look normally</button>
+        <button data-phase="natural">2. Blink normally ×5</button>
+        <button data-phase="intentional">3. Intentional blinks ×5</button>
+        <button id="calFinish">Finish</button>
+      </div>
+      <p id="calResult" class="hint"></p>
+    </section>
+
+    <section class="panel">
+      <p class="hint">Simulated input (works in any mode):</p>
       <div class="buttons">
         <button data-event="BLINK">Blink</button>
         <button data-event="SELECT">Select</button>

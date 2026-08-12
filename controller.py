@@ -8,6 +8,8 @@ is a fixed development path (always CONFIRM); the adaptive policy that chooses
 CONFIRM / CHOICES / FALLBACK arrives in Stage 6.
 """
 
+import threading
+
 from aac.state import CommunicationSession, State, CONFIRM_STATES
 from events import EventType
 from prediction.predictor import get_prediction
@@ -20,24 +22,28 @@ class Controller:
         self.speaker = speaker or Speaker()
         self.prediction = None
         self.selected = None
+        # Ocular processing runs on its own thread and Flask requests on others;
+        # both call handle(), so serialize state changes.
+        self._lock = threading.Lock()
 
     def handle(self, event):
-        et = event.type
-        state = self.session.state
+        with self._lock:
+            state = self.session.state
+            et = event.type
 
-        if et == EventType.BLINK and state == State.IDLE:
-            self._predict()
-        elif et == EventType.SELECT and state == State.PREDICTION_SHOWN:
-            self._choose()
-        elif et == EventType.CONFIRM and state in CONFIRM_STATES:
-            self._confirm_and_speak()
-        elif et == EventType.REJECT and self.session.can(State.REJECTED):
-            self._reject()
-        elif et == EventType.CANCEL and self.session.can(State.CANCELLED):
-            self._cancel()
-        # Any other event in the current state is ignored (no-op).
+            if et == EventType.BLINK and state == State.IDLE:
+                self._predict()
+            elif et == EventType.SELECT and state == State.PREDICTION_SHOWN:
+                self._choose()
+            elif et == EventType.CONFIRM and state in CONFIRM_STATES:
+                self._confirm_and_speak()
+            elif et == EventType.REJECT and self.session.can(State.REJECTED):
+                self._reject()
+            elif et == EventType.CANCEL and self.session.can(State.CANCELLED):
+                self._cancel()
+            # Any other event in the current state is ignored (no-op).
 
-        return self.snapshot()
+            return self.snapshot()
 
     def _predict(self):
         self.session.to(State.PREDICTING)

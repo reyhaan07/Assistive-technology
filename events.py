@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Optional
 
 SIMULATION = "simulation"
+OCULAR = "ocular"
 
 
 class EventType(Enum):
