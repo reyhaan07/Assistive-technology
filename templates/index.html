@@ -3,66 +3,88 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ADAPT-AAC — Development</title>
+  <title>ADAPT-AAC</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
   <main class="wrap">
-    <h1>ADAPT-AAC</h1>
-    <p class="mode">DEVELOPMENT MODE — <span id="modeLabel">SIMULATION</span></p>
+    <header class="topbar">
+      <h1>ADAPT-AAC</h1>
+      <div class="status-pill"><span class="dot" id="statusDot"></span><span id="statusText">—</span></div>
+    </header>
 
-    <section class="panel">
-      <p class="hint">Input source</p>
-      <div class="buttons">
-        <button data-mode="simulation" class="mode-btn">Simulation</button>
-        <button data-mode="ocular" class="mode-btn">Ocular (webcam)</button>
+    <section class="message-panel">
+      <div class="label">MESSAGE</div>
+      <div class="message" id="message"><span class="placeholder">Build a message…</span></div>
+    </section>
+
+    <div class="selection-banner">Blink selects: <b id="current">—</b></div>
+    <div class="notice" id="notice"></div>
+
+    <!-- READY_TO_SPEAK -->
+    <section id="confirmPanel" class="confirm-panel hidden">
+      <div class="label">READY TO SPEAK?</div>
+      <div class="confirm-message" id="confirmMessage"></div>
+      <div class="confirm-buttons">
+        <button class="confirm-opt" data-confirm="speak">SPEAK</button>
+        <button class="confirm-opt" data-confirm="cancel">CANCEL</button>
+      </div>
+    </section>
+
+    <!-- FALLBACK_MODE board -->
+    <section id="board" class="board">
+      <div id="keys" class="keys"></div>
+      <div id="controls" class="row"></div>
+      <div class="group"><div class="group-title">WORDS</div><div id="words" class="row"></div></div>
+      <div class="group"><div class="group-title">COMMON PHRASES</div><div id="phrases" class="list"></div></div>
+      <div class="group"><div class="group-title">RECENT MESSAGES</div><div id="recents" class="list"></div></div>
+    </section>
+
+    <section class="panel controls-panel">
+      <div class="row">
+        <button data-mode="simulation" class="ctl">Simulation</button>
+        <button data-mode="ocular" class="ctl">Ocular</button>
+        <button id="scanBtn" class="ctl">Scan: off</button>
+        <label class="check"><input type="checkbox" id="debugToggle" /> Debug</label>
+      </div>
+      <p class="hint">Simulated input:</p>
+      <div class="row">
+        <button data-event="LEFT" class="ctl">◀ Left</button>
+        <button data-event="RIGHT" class="ctl">Right ▶</button>
+        <button data-event="SELECT" class="ctl primary">● Blink / Select</button>
+        <button data-event="CONFIRM" class="ctl">Confirm</button>
+        <button data-event="CANCEL" class="ctl">Cancel</button>
       </div>
       <p id="modeError" class="error"></p>
     </section>
 
-    <section class="panel status">
-      <div class="row"><span>State</span><b id="state">-</b></div>
-      <div class="row"><span>Input</span><b id="input">-</b></div>
-      <div class="row"><span>Camera</span><b id="camera">-</b></div>
-      <div class="row"><span>Speech</span><b id="speech">-</b></div>
-      <div class="row"><span>Candidates</span><b id="candidates">-</b></div>
-      <div class="row"><span>Final message</span><b id="final">-</b></div>
+    <section class="panel io-status">
+      <span>Camera <b id="ioCamera">—</b></span>
+      <span>Face <b id="ioFace">—</b></span>
+      <span>Eyes <b id="ioEyes">—</b></span>
+      <span>Input <b id="ioInput">—</b></span>
+      <span>Calibrated <b id="ioCal">—</b></span>
     </section>
 
-    <section id="ocularPanel" class="panel hidden">
+    <section id="debugPanel" class="panel status hidden">
+      <div class="row2"><span>EAR</span><b id="dEar">—</b></div>
+      <div class="row2"><span>Blink phase</span><b id="dPhase">—</b></div>
+      <div class="row2"><span>Gaze (experimental)</span><b id="dGaze">—</b></div>
+      <div class="row2"><span>Reliability</span><b id="dRel">—</b></div>
+      <div class="row2"><span>State</span><b id="dState">—</b></div>
+      <div class="row2"><span>Selected target</span><b id="dTarget">—</b></div>
+    </section>
+
+    <section id="ocularSetup" class="panel hidden">
       <div class="video-wrap"><img id="videoFeed" alt="camera preview" /></div>
-
-      <label class="check"><input type="checkbox" id="debugToggle" /> Debug mode</label>
-
-      <div id="debugPanel" class="status hidden">
-        <div class="row"><span>Face</span><b id="oFace">-</b></div>
-        <div class="row"><span>EAR</span><b id="oEar">-</b></div>
-        <div class="row"><span>Blink phase</span><b id="oPhase">-</b></div>
-        <div class="row"><span>Input reliability</span><b id="oRel">-</b></div>
-        <div class="row"><span>Gaze (experimental)</span><b id="oGaze">-</b></div>
-        <div class="row"><span>Natural / Intentional</span><b id="oCounts">-</b></div>
-        <div class="row"><span>Calibrated</span><b id="oCal">-</b></div>
-      </div>
-
       <p class="hint">Calibration</p>
-      <div class="buttons">
-        <button data-phase="baseline">1. Look normally</button>
-        <button data-phase="natural">2. Blink normally ×5</button>
-        <button data-phase="intentional">3. Intentional blinks ×5</button>
-        <button id="calFinish">Finish</button>
+      <div class="row">
+        <button data-phase="baseline" class="ctl">1. Look normally</button>
+        <button data-phase="natural" class="ctl">2. Blink ×5</button>
+        <button data-phase="intentional" class="ctl">3. Intentional ×5</button>
+        <button id="calFinish" class="ctl">Finish</button>
       </div>
       <p id="calResult" class="hint"></p>
-    </section>
-
-    <section class="panel">
-      <p class="hint">Simulated input (works in any mode):</p>
-      <div class="buttons">
-        <button data-event="BLINK">Blink</button>
-        <button data-event="SELECT">Select</button>
-        <button data-event="CONFIRM">Confirm</button>
-        <button data-event="REJECT">Reject</button>
-        <button data-event="CANCEL">Cancel</button>
-      </div>
     </section>
   </main>
 

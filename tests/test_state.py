@@ -9,10 +9,10 @@ def test_valid_happy_path():
     s.to(State.PREDICTING)
     s.to(State.PREDICTION_SHOWN)
     s.to(State.CONFIRM_MODE)
-    msg = s.confirm("hi")
-    assert s.state == State.READY_TO_SPEAK
+    s.to(State.READY_TO_SPEAK)          # armed by an explicit confirm selection
+    msg = s.speak_confirmed("hi")       # final confirmation mints the message
+    assert s.state == State.SPEAKING
     assert isinstance(msg, ConfirmedMessage)
-    s.to(State.SPEAKING)
     s.to(State.IDLE)
     assert s.state == State.IDLE
 
@@ -40,10 +40,10 @@ def test_invalid_rejected_to_speaking():
         s.to(State.SPEAKING)
 
 
-def test_confirm_requires_confirm_mode():
+def test_speak_confirmed_requires_ready():
     s = CommunicationSession()
     with pytest.raises(InvalidTransition):
-        s.confirm("nope")
+        s.speak_confirmed("nope")       # cannot speak straight from IDLE
 
 
 def test_reset_returns_to_idle():

@@ -2,8 +2,9 @@
 
 One state variable is the single source of truth. Invalid transitions raise.
 The only way to produce a ConfirmedMessage (the sole thing speech accepts) is
-CommunicationSession.confirm(), which requires a confirm-capable state. This is
-how the architecture enforces: unconfirmed prediction != speech.
+CommunicationSession.speak_confirmed(), which requires the READY_TO_SPEAK state
+reached by an explicit user confirmation. This is how the architecture enforces:
+unconfirmed message != speech.
 """
 
 import time
@@ -29,7 +30,7 @@ class State(Enum):
 
 # Allowed transitions. Anything not listed is rejected.
 TRANSITIONS = {
-    State.IDLE: {State.PREDICTING, State.ERROR},
+    State.IDLE: {State.PREDICTING, State.FALLBACK_MODE, State.ERROR},
     State.PREDICTING: {State.PREDICTION_SHOWN, State.ERROR},
     State.PREDICTION_SHOWN: {
         State.CONFIRM_MODE, State.CHOICE_MODE, State.FALLBACK_MODE,
@@ -38,21 +39,20 @@ TRANSITIONS = {
     State.CONFIRM_MODE: {State.READY_TO_SPEAK, State.REJECTED, State.CANCELLED, State.ERROR},
     State.CHOICE_MODE: {State.READY_TO_SPEAK, State.REJECTED, State.CANCELLED, State.ERROR},
     State.FALLBACK_MODE: {State.READY_TO_SPEAK, State.CANCELLED, State.ERROR},
-    State.READY_TO_SPEAK: {State.SPEAKING, State.CANCELLED, State.ERROR},
+    # READY_TO_SPEAK -> FALLBACK_MODE lets the user cancel and keep editing.
+    State.READY_TO_SPEAK: {State.SPEAKING, State.FALLBACK_MODE, State.CANCELLED, State.ERROR},
     State.SPEAKING: {State.IDLE, State.ERROR},
     State.REJECTED: {State.IDLE, State.ERROR},
     State.CANCELLED: {State.IDLE, State.ERROR},
     State.ERROR: {State.IDLE},
 }
 
-CONFIRM_STATES = (State.CONFIRM_MODE, State.CHOICE_MODE, State.FALLBACK_MODE)
-
 
 class InvalidTransition(Exception):
     pass
 
 
-# Private key: only confirm() below can mint a ConfirmedMessage.
+# Private key: only speak_confirmed() below can mint a ConfirmedMessage.
 _confirm_key = object()
 
 
@@ -64,7 +64,7 @@ class ConfirmedMessage:
 
     def __post_init__(self):
         if self.key is not _confirm_key:
-            raise PermissionError("ConfirmedMessage is created only by CommunicationSession.confirm()")
+            raise PermissionError("ConfirmedMessage is created only by CommunicationSession.speak_confirmed()")
 
 
 @dataclass
@@ -82,10 +82,11 @@ class CommunicationSession:
             raise InvalidTransition(f"{self.state.name} -> {target.name}")
         self.state = target
 
-    def confirm(self, text: str) -> ConfirmedMessage:
-        if self.state not in CONFIRM_STATES:
-            raise InvalidTransition(f"cannot confirm from {self.state.name}")
-        self.to(State.READY_TO_SPEAK)
+    def speak_confirmed(self, text: str) -> ConfirmedMessage:
+        """Final explicit confirmation: READY_TO_SPEAK -> SPEAKING, mints the message."""
+        if self.state != State.READY_TO_SPEAK:
+            raise InvalidTransition(f"cannot speak from {self.state.name}")
+        self.to(State.SPEAKING)
         self.final_message = text
         return ConfirmedMessage(text, _confirm_key)
 

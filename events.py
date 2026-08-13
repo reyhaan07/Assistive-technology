@@ -15,11 +15,13 @@ OCULAR = "ocular"
 
 
 class EventType(Enum):
-    BLINK = "BLINK"
-    SELECT = "SELECT"
+    BLINK = "BLINK"      # activate the current target (ocular: intentional blink)
+    SELECT = "SELECT"    # same as BLINK; explicit activate
     CONFIRM = "CONFIRM"
     REJECT = "REJECT"
     CANCEL = "CANCEL"
+    LEFT = "LEFT"        # navigation only (never selects)
+    RIGHT = "RIGHT"      # navigation only (never selects)
 
 
 @dataclass

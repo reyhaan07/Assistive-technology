@@ -19,3 +19,16 @@ INTENTIONAL_BLINK_SECONDS = 0.4   # closure >= this counts as an intentional bli
 BLINK_COOLDOWN_SECONDS = 0.6      # refractory period after a blink
 RELIABILITY_WINDOW = 15           # frames used for the reliability ratio
 OCULAR_FPS = 15                   # processing frames per second
+
+# --- Conventional AAC (fixed, no prediction) ---
+WORD_SHORTCUTS = ["I", "YOU", "WANT", "NEED", "PLEASE", "HELP", "YES", "NO"]
+COMMON_PHRASES = [
+    "I NEED HELP",
+    "I WANT WATER",
+    "I AM HUNGRY",
+    "PLEASE WAIT",
+    "CALL MY FAMILY",
+    "THANK YOU",
+]
+RECENT_MESSAGES_MAX = 5
+SCAN_INTERVAL_SECONDS = 1.2       # frontend-driven scan step (large targets, calm pace)

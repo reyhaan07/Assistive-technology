@@ -20,6 +20,7 @@ app = Flask(__name__)
 controller = Controller(Speaker(cooldown=config.SPEECH_COOLDOWN_SECONDS))
 camera = Camera(config.CAMERA_INDEX)  # the one camera abstraction; not started yet
 ocular = OcularInput(camera, FaceMesh(), on_event=controller.handle)
+controller.enter_aac()                # boot into the conventional AAC board
 
 input_mode = "simulation"
 
@@ -30,6 +31,7 @@ def status():
     data["camera"] = camera.status()
     data["speech_available"] = controller.speaker.available
     data["debug"] = ocular.debug
+    data["scan_interval"] = config.SCAN_INTERVAL_SECONDS
     data["ocular"] = ocular.status()
     return data
 
@@ -54,6 +56,23 @@ def simulate():
         return jsonify({"error": f"unknown event: {name}"}), 400
 
     controller.handle(event)
+    return jsonify(status())
+
+
+@app.route("/highlight", methods=["POST"])
+def highlight():
+    body = request.get_json(silent=True) or {}
+    try:
+        index = int(body.get("index"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "index must be an integer"}), 400
+    controller.set_index(index)
+    return jsonify(status())
+
+
+@app.route("/scan", methods=["POST"])
+def scan():
+    controller.scan_advance()
     return jsonify(status())
 
 
