@@ -56,3 +56,5 @@ AUTO_LEARN_INTERVAL_SECONDS = 3.0
 AUTO_LEARN_MIN_NOVELTY = 0.04     # skip samples almost identical to stored ones
 MAX_SAMPLES_PER_GESTURE = 40
 PLACE_LEARN_MAX_ACCURACY_M = 50   # only GPS fixes this accurate refine a place's position
+MAX_LOCATION_ACCURACY_M = 500     # fixes less accurate than this never switch / match places
+CERT_DIR = os.path.join(DATA_DIR, "certs")

@@ -25,7 +25,8 @@ People with speech or hearing impairments often struggle with real-time communic
 * **Hospital → your medical card.** Name, conditions, allergies, medications, blood type and emergency contact are spoken with "Medical info" (or `{medical}` in any phrase).
 * **SOS includes your location** (place name or coordinates) and shows a map link and the emergency phone number.
 * Places learn: every accurate visit refines the saved position.
-* Browsers only allow GPS on `https://` or `http://localhost`.
+* Readings worse than ±500 m (typical Wi-Fi guesses on a laptop, or indoors) are **never** used to arrive at or leave a place, and a place can't be saved from one – so a bad fix can't switch you to the wrong context. They are still used for SOS ("my approximate location…").
+* Browsers only allow GPS on `https://` or `http://localhost` – see **Using your phone's GPS** below.
 
 ### 🧠 Gets more accurate the more you use it
 * Confident recognitions are stored as new samples of **your** hand (old ones roll off, max 40 per gesture).
@@ -71,6 +72,18 @@ python app.py
 ```
 
 Open <http://localhost:5000>.
+
+### 📱 Using your phone's GPS
+
+Laptops usually have no GPS chip, so the best location comes from a phone. Browsers only give a page the location over HTTPS, so start GestureTalk with:
+
+```bash
+python app.py --https
+```
+
+It prints an address such as `https://192.168.1.20:5000`. Open that on your phone (connected to the same Wi-Fi). The phone warns that the certificate is not trusted – it is your own computer's self-signed certificate, so choose **Advanced → Proceed**. This is only needed once; the certificate is saved in `certs/` and reused (it is regenerated automatically if your Wi-Fi address changes). Then tick **Use GPS** on the phone.
+
+Other options: `--port 8443`, `--host 0.0.0.0`, `--camera 1`.
 
 Optional environment variables:
 

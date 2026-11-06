@@ -8,7 +8,9 @@ from typing import Optional
 from flask import Flask, Response, jsonify, render_template, request
 
 from config import (
+    CERT_DIR,
     DEFAULT_EYE_MODE,
+    MAX_LOCATION_ACCURACY_M,
     PLACE_LEARN_MAX_ACCURACY_M,
     CAPTURE_SAMPLES,
     CAPTURE_TIMEOUT_SECONDS,
@@ -165,6 +167,18 @@ class GestureTalk:
 
     # -- GPS --------------------------------------------------------------------
     def update_location(self, lat: float, lon: float, accuracy: Optional[float]) -> dict:
+        """Store the position; switch place only when the fix is accurate enough.
+
+        A very rough fix (Wi-Fi guess, indoors) is still kept for SOS, but it never
+        makes the user "arrive" at or "leave" a place, so it cannot cause wrong switches.
+        """
+        if accuracy is not None and accuracy > MAX_LOCATION_ACCURACY_M:
+            with self.state_lock:
+                self.location = {"lat": lat, "lon": lon, "accuracy": accuracy,
+                                 "time": time.strftime("%H:%M:%S"), "weak": True}
+                place = self.current_place
+            return {"place": place, "arrived": False, "ignored": True,
+                    "reason": f"Location too inaccurate (±{round(accuracy)} m) to match places"}
         place = self.places.nearest(lat, lon)
         if place and accuracy is not None and accuracy <= PLACE_LEARN_MAX_ACCURACY_M:
             self.places.refine(place["id"], lat, lon)
@@ -181,6 +195,9 @@ class GestureTalk:
             loc, place = self.location, self.current_place
         if place:
             return f"I am at {place['name']}."
+        if loc and loc.get("weak"):
+            return (f"My approximate location is latitude {loc['lat']:.4f}, "
+                    f"longitude {loc['lon']:.4f}, within {round(loc['accuracy'])} metres.")
         if loc:
             return f"My location is latitude {loc['lat']:.5f}, longitude {loc['lon']:.5f}."
         return ""
@@ -414,9 +431,18 @@ def create_app(camera, tts, store: Optional[GestureStore] = None,
     @app.route("/places", methods=["GET", "POST"])
     def places_route():
         if request.method == "GET":
-            return jsonify({"places": talk.places.list(), "contexts": CONTEXTS})
+            return jsonify({"places": talk.places.list(), "contexts": CONTEXTS,
+                            "max_accuracy": MAX_LOCATION_ACCURACY_M})
+        data = request.get_json(silent=True) or {}
         try:
-            return jsonify(talk.places.add(request.get_json(silent=True) or {}))
+            accuracy = float(data["accuracy"]) if data.get("accuracy") is not None else None
+        except (TypeError, ValueError):
+            accuracy = None
+        if accuracy is not None and accuracy > MAX_LOCATION_ACCURACY_M:
+            return error(f"Location is too inaccurate (±{round(accuracy)} m) to save a place. "
+                         "Go outside or use a phone with GPS and try again.")
+        try:
+            return jsonify(talk.places.add(data))
         except ValueError as exc:
             return error(str(exc))
 
@@ -447,12 +473,29 @@ def create_app(camera, tts, store: Optional[GestureStore] = None,
     return app
 
 
-def main():
+def parse_args(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description="GestureTalk – gesture, blink and GPS assisted speech")
+    parser.add_argument("--https", action="store_true",
+                        help="serve over HTTPS (self-signed) so phones on the same Wi-Fi can share GPS")
+    parser.add_argument("--host", default=HOST)
+    parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--camera", type=int, default=None, help="camera index (default from config)")
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
     from camera import CameraProcessor
     from tts import TTSManager
 
+    args = parse_args(argv)
+    ssl_context = None
+    if args.https:
+        from certs import ensure_certificate, lan_ips
+        ssl_context = ensure_certificate(CERT_DIR)
+
     store = GestureStore()
-    camera = CameraProcessor(store)
+    camera = CameraProcessor(store) if args.camera is None else CameraProcessor(store, camera_index=args.camera)
     tts = TTSManager(cooldown_seconds=SPEECH_COOLDOWN_SECONDS)
     app = create_app(camera, tts, store=store)
     talk = app.config["TALK"]
@@ -460,8 +503,16 @@ def main():
     threading.Thread(target=camera.process_camera_loop, daemon=True).start()
     threading.Thread(target=talk.recognition_loop, daemon=True).start()
 
-    print(f"GestureTalk running on http://localhost:{PORT}")
-    app.run(host=HOST, port=PORT, debug=False, threaded=True)
+    scheme = "https" if ssl_context else "http"
+    print(f"GestureTalk running on {scheme}://localhost:{args.port}")
+    if ssl_context:
+        for ip in lan_ips():
+            print(f"  On your phone (same Wi-Fi): https://{ip}:{args.port}")
+        print("  The phone will warn that the certificate is not trusted – it is your own "
+              "computer, so choose 'Advanced' -> 'Proceed'. You only need to do this once.")
+    else:
+        print("  Tip: run with --https to use your phone's GPS (browsers block GPS over plain http).")
+    app.run(host=args.host, port=args.port, debug=False, threaded=True, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":

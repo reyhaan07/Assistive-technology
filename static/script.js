@@ -652,13 +652,24 @@ function distanceM(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+const MAX_ACCURACY_M = 500; // same limit as the server
+
 async function sendLocation(pos) {
   const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+  const weak = loc.accuracy > MAX_ACCURACY_M;
   state.location = loc;
-  $('placeCoords').textContent = `Current position ±${Math.round(loc.accuracy)} m`;
-  setBadge(els.gpsBadge, true, `GPS ±${Math.round(loc.accuracy)} m`, '');
+  $('placeCoords').textContent = weak
+    ? `Position too rough to save a place (±${Math.round(loc.accuracy)} m)`
+    : `Current position ±${Math.round(loc.accuracy)} m`;
+  setBadge(els.gpsBadge, !weak, `GPS ±${Math.round(loc.accuracy)} m`, `GPS weak ±${Math.round(loc.accuracy)} m`);
+  $('gpsInfo').textContent = weak
+    ? 'Location is only approximate (probably Wi-Fi based). Places will not switch until it improves – '
+      + 'go near a window/outside, or open GestureTalk on your phone (see README: --https).'
+    : 'GPS is working. When you arrive at a saved place, the context switches automatically.';
+
   const now = Date.now();
-  if (gps.lastSent && distanceM(gps.lastSent, loc) < 15 && now - gps.lastSentTime < 20000) return;
+  if (gps.lastSent && distanceM(gps.lastSent, loc) < 15 && now - gps.lastSentTime < 20000
+      && Math.abs(gps.lastSent.accuracy - loc.accuracy) < 25) return;
   gps.lastSent = loc;
   gps.lastSentTime = now;
   try {
@@ -679,9 +690,15 @@ function startGps() {
     return;
   }
   if (!window.isSecureContext) {
-    $('gpsInfo').textContent = 'Browsers only allow GPS on https:// or http://localhost. Open GestureTalk via localhost on this device.';
+    setBadge(els.gpsBadge, false, '', 'GPS needs https');
+    $('gpsInfo').textContent = 'Browsers block GPS on plain http:// from another device. Start GestureTalk with '
+      + '“python app.py --https” and open the https:// address it prints on your phone.';
+    show(els.message, 'GPS blocked: this page is not https. Run “python app.py --https”.', 'error');
+    $('gpsToggle').checked = false;
+    return;
   }
-  setBadge(els.gpsBadge, false, '', 'GPS…');
+  els.gpsBadge.textContent = 'GPS…';
+  els.gpsBadge.classList.remove('ok', 'bad');
   gps.watchId = navigator.geolocation.watchPosition(sendLocation, (err) => {
     setBadge(els.gpsBadge, false, '', 'GPS blocked');
     show(els.message, `GPS: ${err.message}`, 'error');
@@ -759,12 +776,16 @@ $('placeForm').addEventListener('submit', async (e) => {
     show(els.message, 'Turn on “Use GPS” and wait for a position before saving a place.', 'error');
     return;
   }
+  if (state.location.accuracy > MAX_ACCURACY_M) {
+    show(els.message, `Location is too rough (±${Math.round(state.location.accuracy)} m) to save a place. Try outside or on your phone.`, 'error');
+    return;
+  }
   try {
     const place = await api('/places', {
       method: 'POST',
       body: {
         name: $('placeName').value, context: $('placeContext').value, usual: $('placeUsual').value,
-        lat: state.location.lat, lon: state.location.lon,
+        lat: state.location.lat, lon: state.location.lon, accuracy: state.location.accuracy,
         radius: Math.max(80, Math.min(400, (state.location.accuracy || 0) * 2)),
       },
     });

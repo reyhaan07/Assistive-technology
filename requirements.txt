@@ -5,4 +5,5 @@ mediapipe==0.10.21
 opencv-python>=4.8,<4.12
 numpy>=1.24,<2
 pyttsx3>=2.90
+cryptography>=41  # only needed for --https (phone GPS)
 pytest>=7

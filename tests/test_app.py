@@ -278,3 +278,43 @@ def test_correction_and_suggestions(env):
     data = client.get("/suggest?prefix=wa").get_json()
     assert data["words"][0] == "water"
     assert "I need water please" in data["phrases"]
+
+
+def test_inaccurate_fix_never_switches_or_leaves_place(env):
+    client, talk, camera, tts = env
+    client.post("/places", json={"name": "Clinic", "context": "hospital", **CAFE})
+    # rough Wi-Fi guess right on top of the clinic: ignored
+    res = client.post("/location", json={**CAFE, "accuracy": 2000}).get_json()
+    assert res["ignored"] and not res["arrived"]
+    assert client.get("/get_state").get_json()["context"] == "cafe"
+
+    # good fix -> arrive
+    assert client.post("/location", json={**CAFE, "accuracy": 15}).get_json()["arrived"]
+    # rough fix far away does not make us "leave"
+    client.post("/location", json={"lat": 52.0, "lon": 0.5, "accuracy": 3000})
+    state = client.get("/get_state").get_json()
+    assert state["place"]["name"] == "Clinic" and state["location"]["weak"]
+
+    # SOS still reports the (approximate) position
+    res = client.post("/speak", json={"text": "Help", "source": "sos"}).get_json()
+    assert "Clinic" in res["phrase"]
+
+
+def test_cannot_save_place_from_rough_fix(env):
+    client, *_ = env
+    res = client.post("/places", json={"name": "X", "context": "cafe", **CAFE, "accuracy": 900})
+    assert res.status_code == 400 and "inaccurate" in res.get_json()["error"]
+    assert client.post("/places", json={"name": "X", "context": "cafe", **CAFE, "accuracy": 30}).status_code == 200
+
+
+def test_weak_location_text_in_sos(env):
+    client, talk, *_ = env
+    client.post("/location", json={**CAFE, "accuracy": 1500})
+    assert "approximate" in talk.location_text() and "1500 metres" in talk.location_text()
+
+
+def test_parse_args():
+    from app import parse_args
+    args = parse_args(["--https", "--port", "8443", "--camera", "1"])
+    assert args.https and args.port == 8443 and args.camera == 1
+    assert parse_args([]).https is False
