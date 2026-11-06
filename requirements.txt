@@ -1,5 +1,8 @@
-flask
-opencv-python
-mediapipe
-pyttsx3
-numpy
+# MediaPipe's legacy "solutions" API (used for hand tracking) was removed in
+# newer releases, so it is pinned. Use Python 3.10 - 3.12.
+flask>=2.3
+mediapipe==0.10.21
+opencv-python>=4.8,<4.12
+numpy>=1.24,<2
+pyttsx3>=2.90
+pytest>=7

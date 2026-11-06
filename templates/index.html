@@ -7,46 +7,119 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
+  <header class="topbar">
+    <div>
+      <h1>GestureTalk</h1>
+      <p class="subtitle">Speak with a wave – show a gesture, GestureTalk says it out loud.</p>
+    </div>
+    <div class="badges">
+      <button id="sosBtn" class="btn-sos" title="Speak an emergency message and sound an alarm">SOS</button>
+      <button id="displayBtn" class="btn-ghost" title="Show the phrase in large text to the person you are talking to">Show to listener</button>
+      <span id="cameraBadge" class="badge">Camera</span>
+      <span id="ttsBadge" class="badge">Speech</span>
+    </div>
+  </header>
+
   <main class="container">
     <section class="panel">
-      <h1>GestureTalk – Speak with a Wave</h1>
-      <p class="subtitle">Train custom gestures, switch context, and speak offline in real time.</p>
-
       <div class="video-wrap">
-        <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed" />
+        <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed with hand tracking" />
+        <div id="countdown" class="countdown" hidden></div>
       </div>
 
-      <div class="controls">
-        <button id="trainBtn" class="btn-train">Train Current Gesture</button>
-      </div>
-
-      <div class="contexts" id="contextButtons">
+      <h2 class="section-title">Context</h2>
+      <div class="contexts" id="contextButtons" role="group" aria-label="Context">
         {% for ctx in contexts %}
-        <button class="btn-context" data-context="{{ ctx }}">{{ ctx|capitalize }}</button>
+        <button class="btn-context" data-context="{{ ctx }}" aria-pressed="false">{{ ctx|capitalize }}</button>
         {% endfor %}
       </div>
 
-      <p id="errorBox" class="error"></p>
+      <div class="controls">
+        <button id="trainBtn" class="btn-primary">+ Train new gesture</button>
+        <label class="toggle"><input type="checkbox" id="muteToggle" /> Mute speaker</label>
+        <label class="toggle"><input type="checkbox" id="browserVoiceToggle" /> Speak in browser</label>
+      </div>
+
+      <div class="voice-row" id="voiceRow">
+        <label>Browser voice
+          <select id="voiceSelect" aria-label="Browser voice"></select>
+        </label>
+        <label>Speed
+          <input id="rateInput" type="range" min="0.6" max="1.6" step="0.1" value="1" aria-label="Speech speed" />
+        </label>
+      </div>
+
+      <form id="speakForm" class="speak-form">
+        <input id="speakInput" type="text" maxlength="300" placeholder="Type a message to speak..." aria-label="Message to speak" />
+        <button type="submit" class="btn-secondary">Speak</button>
+      </form>
+
+      <p id="messageBox" class="message" role="status" aria-live="polite"></p>
     </section>
 
     <aside class="panel">
-      <h2>Live Status</h2>
+      <h2 class="section-title">Live status</h2>
       <div class="card">
-        <div class="label">Current Context</div>
+        <div class="label">Current context</div>
         <div class="value" id="contextValue">-</div>
       </div>
       <div class="card">
-        <div class="label">Detected Gesture</div>
+        <div class="label">Detected gesture</div>
         <div class="value" id="gestureValue">-</div>
       </div>
-      <div class="card">
-        <div class="label">Spoken Phrase</div>
-        <div class="value" id="phraseValue">-</div>
+      <div class="card highlight">
+        <div class="label">Spoken phrase</div>
+        <div class="value phrase" id="phraseValue" aria-live="polite">-</div>
       </div>
+
+      <h2 class="section-title">History</h2>
+      <ol id="historyList" class="history"><li class="muted">Nothing spoken yet.</li></ol>
     </aside>
+
+    <section class="panel wide">
+      <div class="section-head">
+        <h2 class="section-title">Gestures</h2>
+        <span class="muted" id="gestureCount"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="gesture-table">
+          <thead id="gestureHead"></thead>
+          <tbody id="gestureBody"></tbody>
+        </table>
+      </div>
+      <p class="muted small">Built-in gestures work without training. Training a gesture with the same name improves its recognition.</p>
+    </section>
   </main>
 
-  <!-- ✅ IMPORTANT FIX: add defer -->
+  <div id="listenerView" class="listener" hidden role="dialog" aria-label="Listener display">
+    <div class="listener-context" id="listenerContext"></div>
+    <div class="listener-phrase" id="listenerPhrase" aria-live="assertive"></div>
+    <button id="closeListener" class="btn-ghost">Close (Esc)</button>
+  </div>
+
+  <dialog id="trainDialog">
+    <form id="trainForm" method="dialog">
+      <h2 id="dialogTitle">Train a gesture</h2>
+      <label>Gesture name
+        <input id="gestureName" name="gesture_name" required maxlength="40" pattern="[A-Za-z0-9_ ]+" placeholder="e.g. water" />
+      </label>
+      <div id="messageFields" class="message-fields">
+        {% for ctx in contexts %}
+        <label>{{ ctx|capitalize }} phrase
+          <input name="msg_{{ ctx }}" data-context="{{ ctx }}" maxlength="200" />
+        </label>
+        {% endfor %}
+      </div>
+      <p class="muted small" id="captureHint">Click “Capture”, then hold the gesture steady in front of the camera.</p>
+      <p id="dialogMessage" class="message" role="status" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" id="cancelBtn" class="btn-ghost">Cancel</button>
+        <button type="button" id="captureBtn" class="btn-secondary">Capture</button>
+        <button type="submit" id="saveBtn" class="btn-primary" disabled>Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </body>
 </html>
