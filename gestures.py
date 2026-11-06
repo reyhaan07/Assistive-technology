@@ -103,42 +103,65 @@ def classify_builtin(landmarks: np.ndarray) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Trained gestures
 # ---------------------------------------------------------------------------
+def finger_signature(landmarks: np.ndarray) -> Tuple[bool, ...]:
+    """Which fingers are extended (thumb, index, middle, ring, pinky)."""
+    st = finger_states(np.asarray(landmarks, dtype=np.float32))
+    return (st["thumb"], st["index"], st["middle"], st["ring"], st["pinky"])
+
+
 class GestureStore:
-    """Thread-safe store of trained landmark samples, persisted to JSON."""
+    """Thread-safe store of trained landmark samples, persisted to JSON.
+
+    Each sample remembers whether the user taught it ("manual": training or a
+    correction) or GestureTalk learned it by itself ("auto"). Matching only
+    compares hands with the same fingers extended, and needs a clear winner,
+    so gestures that differ by a single finger (point vs peace) never mix.
+    """
+
+    AMBIGUITY_RATIO = 0.8  # best match must be clearly closer than the next gesture
 
     def __init__(self, file_path: str = GESTURES_FILE):
-        self._gestures: Dict[str, List[np.ndarray]] = {}
+        self._gestures: Dict[str, List[dict]] = {}
         self.file_path = file_path
         self._lock = threading.RLock()
         self.load()
+
+    @staticmethod
+    def _sample(landmarks, auto: bool) -> dict:
+        lm = np.asarray(landmarks, dtype=np.float32).copy()
+        return {"lm": lm, "auto": bool(auto), "sig": finger_signature(lm)}
 
     def add_gesture(self, name: str, landmarks) -> None:
         self.add_samples(name, [landmarks])
 
     def add_samples(self, name: str, samples) -> None:
+        """Samples the user deliberately taught (training / corrections)."""
         name = name.lower().strip()
         with self._lock:
             bucket = self._gestures.setdefault(name, [])
             for sample in samples:
-                bucket.append(np.asarray(sample, dtype=np.float32).copy())
+                bucket.append(self._sample(sample, auto=False))
             self.save()
 
     def learn_sample(self, name: str, landmarks: np.ndarray, min_novelty: float,
                      max_samples: int) -> bool:
         """Add a sample seen during normal use, if it teaches something new.
 
-        Old samples are dropped once `max_samples` is reached, so the model keeps
-        adapting to how the user makes the gesture today.
+        Only automatic samples are rotated out when `max_samples` is reached;
+        samples the user taught are never dropped.
         """
         name = name.lower().strip()
-        sample = np.asarray(landmarks, dtype=np.float32).copy()
+        sample = self._sample(landmarks, auto=True)
         with self._lock:
             bucket = self._gestures.setdefault(name, [])
-            if bucket and min(gesture_distance(sample, s) for s in bucket) < min_novelty:
+            if bucket and min(gesture_distance(sample["lm"], s["lm"]) for s in bucket) < min_novelty:
                 return False
             bucket.append(sample)
-            if len(bucket) > max_samples:
-                del bucket[0: len(bucket) - max_samples]
+            while len(bucket) > max_samples:
+                oldest_auto = next((i for i, s in enumerate(bucket) if s["auto"]), None)
+                if oldest_auto is None:
+                    break
+                del bucket[oldest_auto]
             self.save()
             return True
 
@@ -161,25 +184,42 @@ class GestureStore:
         with self._lock:
             return sum(len(v) for v in self._gestures.values())
 
+    def match_detail(self, live_landmarks: np.ndarray, threshold: float) -> dict:
+        """Best trained match: {"name", "dist", "auto"}; name is "none" when unsure."""
+        live_sig = finger_signature(live_landmarks)
+        best: Dict[str, Tuple[float, bool]] = {}
+        nearest = None
+        with self._lock:
+            for name, samples in self._gestures.items():
+                for s in samples:
+                    dist = gesture_distance(live_landmarks, s["lm"])
+                    if nearest is None or dist < nearest:
+                        nearest = dist
+                    if s["sig"] != live_sig:
+                        continue  # different fingers extended: never the same gesture
+                    if name not in best or dist < best[name][0]:
+                        best[name] = (dist, s["auto"])
+        if not best:
+            return {"name": "none", "dist": nearest, "auto": False}
+        ranked = sorted(best.items(), key=lambda kv: kv[1][0])
+        name, (d1, auto) = ranked[0]
+        if d1 >= threshold:
+            return {"name": "none", "dist": d1, "auto": False}
+        if len(ranked) > 1 and d1 > self.AMBIGUITY_RATIO * ranked[1][1][0]:
+            return {"name": "none", "dist": d1, "auto": False}  # two gestures too similar
+        return {"name": name, "dist": d1, "auto": auto}
+
     def match(self, live_landmarks: np.ndarray, threshold: float) -> Tuple[str, Optional[float]]:
         with self._lock:
             if not self._gestures:
                 return "none", None
-
-            best_name, best_dist = "none", float("inf")
-            for name, samples in self._gestures.items():
-                for saved in samples:
-                    dist = gesture_distance(live_landmarks, saved)
-                    if dist < best_dist:
-                        best_dist, best_name = dist, name
-
-        if best_dist < threshold:
-            return best_name, best_dist
-        return "none", best_dist
+        d = self.match_detail(live_landmarks, threshold)
+        return d["name"], d["dist"]
 
     def save(self) -> None:
         with self._lock:
-            data = {name: [lm.tolist() for lm in samples] for name, samples in self._gestures.items()}
+            data = {name: [{"lm": s["lm"].tolist(), "auto": s["auto"]} for s in samples]
+                    for name, samples in self._gestures.items()}
         directory = os.path.dirname(self.file_path)
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -198,12 +238,33 @@ class GestureStore:
             print(f"[gestures] Could not read {self.file_path}: {exc}")
             return
 
+        gestures, pruned = {}, 0
+        for name, samples in data.items():
+            bucket = []
+            for item in samples or []:
+                legacy = not isinstance(item, dict)
+                lm = item if legacy else item.get("lm")
+                try:
+                    sample = self._sample(lm, auto=False if legacy else bool(item.get("auto")))
+                except (TypeError, ValueError):
+                    continue
+                if sample["lm"].shape != (21, 3):
+                    continue
+                # Clean up self-learned mistakes: an automatic (or old, unlabelled) sample
+                # stored under a built-in name that the built-in rules clearly contradict.
+                if name in BUILTIN_GESTURES and (sample["auto"] or legacy):
+                    rule = classify_builtin(sample["lm"])
+                    if rule and rule != name:
+                        pruned += 1
+                        continue
+                bucket.append(sample)
+            if bucket:
+                gestures[name] = bucket
         with self._lock:
-            self._gestures = {
-                name: [np.array(lm, dtype=np.float32) for lm in samples]
-                for name, samples in data.items()
-                if samples
-            }
+            self._gestures = gestures
+        if pruned:
+            print(f"[gestures] Removed {pruned} mislearned sample(s)")
+            self.save()
 
 
 class GestureSmoother:

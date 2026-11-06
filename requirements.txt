@@ -1,9 +1,10 @@
-# MediaPipe's legacy "solutions" API (used for hand tracking) was removed in
-# newer releases, so it is pinned. Use Python 3.10 - 3.12.
 flask>=2.3
-mediapipe==0.10.21
-opencv-python>=4.8,<4.12
-numpy>=1.24,<2
+numpy>=1.24,<2 ; python_version < "3.13"
+numpy>=2 ; python_version >= "3.13"
+opencv-python>=4.8,<4.12 ; python_version < "3.13"
+# MediaPipe's Python hand-tracking API needs Python 3.10-3.12. On newer Python
+# GestureTalk automatically uses browser camera mode instead (tracking in the browser).
+mediapipe==0.10.21 ; python_version < "3.13"
 pyttsx3>=2.90
 cryptography>=41  # only needed for --https (phone GPS)
 pytest>=7

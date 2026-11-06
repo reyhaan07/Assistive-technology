@@ -308,3 +308,18 @@ code { background: #0b1220; border: 1px solid var(--border); border-radius: 6px;
   .board-grid, .board-grid.items { grid-template-columns: repeat(2, 1fr); }
   .tile { min-height: 72px; }
 }
+
+/* ---------- browser camera mode ---------- */
+#camVideo, #camOverlay {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; transform: scaleX(-1); /* selfie view */
+}
+#camOverlay { pointer-events: none; }
+.cam-status, .cam-label {
+  position: absolute; left: 12px; right: 12px; padding: 8px 12px; border-radius: 10px;
+  background: rgba(2, 6, 23, 0.75); font-weight: 600;
+}
+.cam-status { bottom: 12px; color: var(--text); }
+.cam-status.error { color: var(--error); }
+.cam-status[hidden], .cam-label[hidden] { display: none; }
+.cam-label { top: 12px; right: auto; color: #bbf7d0; font-size: 1.2rem; text-transform: capitalize; }

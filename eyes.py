@@ -39,6 +39,13 @@ def face_ear(points: np.ndarray) -> float:
     return (eye_aspect_ratio(points, LEFT_EYE) + eye_aspect_ratio(points, RIGHT_EYE)) / 2.0
 
 
+def ear_from_eye_points(points: np.ndarray) -> float:
+    """EAR from 12 points: LEFT_EYE p1..p6 followed by RIGHT_EYE p1..p6 (pixel coords)."""
+    pts = np.asarray(points, dtype=np.float32)
+    idx = (0, 1, 2, 3, 4, 5)
+    return (eye_aspect_ratio(pts[:6], idx) + eye_aspect_ratio(pts[6:], idx)) / 2.0
+
+
 class BlinkDetector:
     """Turns a stream of EAR values into 'short' / 'long' / 'very_long' blink events."""
 

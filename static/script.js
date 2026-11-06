@@ -200,7 +200,9 @@ async function refreshState() {
     renderHistory(data.history);
     renderEye(data.eye);
     renderGps(data.gps);
-    setBadge(els.cameraBadge, data.camera_ok, 'Camera on', 'No camera');
+    window.gestureTalk = { eyeMode: data.eye.mode, eyeClosed: !!data.eye.closed, gesture: data.gesture };
+    setBadge(els.cameraBadge, data.camera_ok, 'Camera on',
+      data.camera_mode === 'browser' ? 'Camera starting…' : 'No camera');
     setBadge(els.ttsBadge, data.tts_available && !data.muted, 'Speaker on',
       data.tts_available ? 'Speaker muted' : 'No speaker');
     els.mute.checked = data.muted;

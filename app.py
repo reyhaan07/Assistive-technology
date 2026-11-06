@@ -231,6 +231,7 @@ class GestureTalk:
             snap["speech_id"] = self.speech_id
         snap["trained_gesture_count"] = self.store.count()
         snap["camera_ok"] = bool(getattr(self.camera, "camera_ok", True))
+        snap["camera_mode"] = getattr(self.camera, "camera_mode", "server")
         snap["tts_available"] = bool(self.tts.available)
         snap["muted"] = bool(self.tts.muted)
         eye = self.camera.get_eye_status() if hasattr(self.camera, "get_eye_status") else {}
@@ -268,9 +269,20 @@ def create_app(camera, tts, store: Optional[GestureStore] = None,
     def error(message, status=400):
         return jsonify({"error": message}), status
 
+    camera_mode = getattr(camera, "camera_mode", "server")
+
     @app.route("/")
     def index():
-        return render_template("index.html", contexts=CONTEXTS)
+        from assets import TASKS_VISION_VERSION, assets_present
+        return render_template("index.html", contexts=CONTEXTS, camera_mode=camera_mode,
+                               local_vision=assets_present(), vision_version=TASKS_VISION_VERSION)
+
+    @app.route("/landmarks", methods=["POST"])
+    def landmarks():
+        """Browser camera mode: one frame of hand / eye landmarks from the page."""
+        if not hasattr(camera, "ingest"):
+            return error("This server uses its own camera", 409)
+        return jsonify(camera.ingest(request.get_json(silent=True) or {}))
 
     @app.route("/video_feed")
     def video_feed():
@@ -492,11 +504,12 @@ def parse_args(argv=None):
     parser.add_argument("--host", default=HOST)
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--camera", type=int, default=None, help="camera index (default from config)")
+    parser.add_argument("--browser-camera", action="store_true",
+                        help="use the webcam of the browser that opens the page (tracking runs in the browser)")
     return parser.parse_args(argv)
 
 
 def main(argv=None):
-    from camera import CameraProcessor
     from tts import TTSManager
 
     args = parse_args(argv)
@@ -506,12 +519,27 @@ def main(argv=None):
         ssl_context = ensure_certificate(CERT_DIR)
 
     store = GestureStore()
-    camera = CameraProcessor(store) if args.camera is None else CameraProcessor(store, camera_index=args.camera)
+    camera = None
+    if not args.browser_camera:
+        try:
+            from camera import CameraProcessor
+            camera = (CameraProcessor(store) if args.camera is None
+                      else CameraProcessor(store, camera_index=args.camera))
+        except Exception as exc:  # no OpenCV / MediaPipe 'solutions' (e.g. Python 3.13)
+            print(f"[camera] Server camera unavailable: {exc}")
+            print("[camera] Switching to browser camera mode: the page will use your browser's webcam.")
+    if camera is None:
+        from assets import ensure_vision_assets
+        from browser_camera import BrowserCamera
+        camera = BrowserCamera(store)
+        ensure_vision_assets()
+
     tts = TTSManager(cooldown_seconds=SPEECH_COOLDOWN_SECONDS)
     app = create_app(camera, tts, store=store)
     talk = app.config["TALK"]
 
-    threading.Thread(target=camera.process_camera_loop, daemon=True).start()
+    if hasattr(camera, "process_camera_loop"):
+        threading.Thread(target=camera.process_camera_loop, daemon=True).start()
     threading.Thread(target=talk.recognition_loop, daemon=True).start()
 
     scheme = "https" if ssl_context else "http"

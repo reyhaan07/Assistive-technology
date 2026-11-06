@@ -36,6 +36,7 @@ People with speech or hearing impairments often struggle with real-time communic
 
 ### 🧠 Gets more accurate the more you use it
 * Confident recognitions are stored as new samples of **your** hand (old ones roll off, max 40 per gesture).
+* Safe learning: samples are only compared with hands that have the **same fingers extended** (so "point" can never be mistaken for "peace"), the best match must be clearly better than the next gesture, and a self-learned sample can never overrule the built-in rules. Samples you teach yourself (training / "Wrong?") always win and are never rotated out.
 * The **"Wrong?"** button teaches the correct gesture for the last pose.
 * Phrases you use most move to the front of the blink board; words you use are suggested first when spelling or typing.
 
@@ -63,6 +64,13 @@ Phrases can contain placeholders: `{usual|fallback}`, `{medical}`, `{place}`, `{
 Python · Flask · OpenCV · MediaPipe · NumPy · pyttsx3 · HTML/CSS/JavaScript (Web Speech API)
 
 ---
+
+## 🌐 Two camera modes
+
+* **Server camera** (default on Python 3.10–3.12): the computer running `app.py` reads its own webcam with OpenCV + MediaPipe.
+* **Browser camera** (`python app.py --browser-camera`, and automatic when MediaPipe's Python API isn't available, e.g. Python 3.13): the page uses the webcam of whoever opens it. Hand and face tracking run **in the browser** (MediaPipe Tasks / WebAssembly) and only the landmark coordinates are sent to the server – **video never leaves the device**. This lets GestureTalk run on a remote/cloud server and be opened from any laptop or phone. The web library and models (~30 MB) are downloaded once into `static/vendor/` and served locally. Browsers only allow the camera on `https://` or `http://localhost`.
+
+Recognition is identical in both modes (same gestures, learning, blinks and places).
 
 ## ⚙️ Setup
 
@@ -130,7 +138,12 @@ The tests use a fake camera and fake speech engine, so they don't need a webcam.
 
 ```
 app.py          Flask app + API routes, recognition loop, speech decisions
-camera.py       Webcam capture, MediaPipe hand tracking, video stream
+recognizer.py   Shared recognition: gestures, learning, blinks (used by both camera modes)
+camera.py       Server camera: OpenCV + MediaPipe (Python), video stream
+browser_camera.py  Browser camera mode: receives landmarks from the page
+assets.py       Downloads the MediaPipe web library + models for browser mode
+geo.py          Accurate GPS place detection (smoothing, certainty, dwell)
+certs.py        Self-signed certificate for --https
 gestures.py     Landmark normalisation, trained-gesture store, built-in gestures, smoothing
 eyes.py         Eye-aspect-ratio blink detection and blink-pattern decoding
 places.py       GPS places, "my usual", medical card, phrase placeholders
@@ -165,7 +178,8 @@ tests/          pytest suite
 | GET/POST | `/places` | List / add places (`name`, `context`, `lat`, `lon`, `radius`, `usual`) |
 | PUT/DELETE | `/places/<id>` | Update / delete a place |
 | GET/PUT | `/profile` | Medical card |
-| GET | `/video_feed` | MJPEG camera stream |
+| POST | `/landmarks` | Browser camera mode: `{"hand": 21×[x,y,z], "handedness", "eye": 12×[x,y]}` |
+| GET | `/video_feed` | MJPEG camera stream (server camera mode) |
 
 ---
 
