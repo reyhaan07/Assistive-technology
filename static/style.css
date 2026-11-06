@@ -227,3 +227,84 @@ select {
   max-width: 100%;
 }
 .badges { align-items: center; flex-wrap: wrap; }
+
+/* ---------- eyes / blink board ---------- */
+.eye-modes { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.eye-modes label {
+  display: inline-flex; gap: 6px; align-items: center; cursor: pointer;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+}
+.eye-modes label:has(input:checked) { border-color: var(--accent2); background: rgba(56, 189, 248, .12); }
+.eye-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.legend { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.legend td { padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.legend td:first-child { color: var(--muted); width: 50%; }
+
+.board {
+  position: fixed; inset: 0; z-index: 40;
+  background: #020617;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+}
+.board[hidden] { display: none; }
+.board-top { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.board-text {
+  flex: 1 1 300px; min-height: 64px;
+  font-size: clamp(1.6rem, 4vw, 2.6rem); font-weight: 700;
+  padding: 10px 16px; border-radius: 12px; border: 1px solid var(--border); background: #0b1220;
+  overflow-wrap: anywhere;
+}
+.caret { display: inline-block; width: 3px; height: 1em; background: var(--accent2); margin-left: 2px; vertical-align: -0.1em; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.board-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.board-meta label { display: inline-flex; gap: 6px; align-items: center; }
+.board-hint { margin: 0; color: var(--muted); font-size: 1.1rem; }
+.board-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.board-grid.items { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.tile {
+  min-height: 92px;
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+  background: #111827; color: var(--text);
+  border: 3px solid var(--border); border-radius: 16px;
+  transition: transform .12s, background .12s;
+}
+.tile.letter { font-size: 2.6rem; }
+.tile.lit {
+  background: #facc15; color: #111827; border-color: #fde68a;
+  transform: scale(1.04);
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, .35);
+}
+.board-spoken { min-height: 2.4rem; font-size: 1.8rem; font-weight: 700; color: #bbf7d0; text-align: center; }
+.board-spoken.pulse { animation: pulse .6s ease-out; }
+
+/* ---------- places + medical card ---------- */
+.place-list { list-style: none; padding: 0; margin: 10px 0; }
+.place-list li {
+  display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.place-list .actions { display: flex; gap: 6px; flex-shrink: 0; }
+.place-form { display: grid; gap: 8px; grid-template-columns: 1fr 140px; }
+.place-form #placeUsual, .place-actions { grid-column: 1 / -1; }
+.place-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.profile-form { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.profile-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: .85rem; }
+.profile-actions { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.profile-actions p { margin: 0; flex: 1 1 300px; }
+
+.value-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.history li.sos div { color: var(--error); font-weight: 700; }
+.listener-map { color: var(--accent2); font-size: 1.3rem; }
+.listener-map[hidden] { display: none; }
+code { background: #0b1220; border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; font-size: .85em; }
+.toggle { margin-right: 4px; }
+
+@media (max-width: 600px) {
+  .place-form { grid-template-columns: 1fr; }
+  .board-grid, .board-grid.items { grid-template-columns: repeat(2, 1fr); }
+  .tile { min-height: 72px; }
+}

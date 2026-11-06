@@ -10,20 +10,22 @@
   <header class="topbar">
     <div>
       <h1>GestureTalk</h1>
-      <p class="subtitle">Speak with a wave – show a gesture, GestureTalk says it out loud.</p>
+      <p class="subtitle">Speak with your hands, your eyes, or your keyboard.</p>
     </div>
     <div class="badges">
-      <button id="sosBtn" class="btn-sos" title="Speak an emergency message and sound an alarm">SOS</button>
+      <button id="sosBtn" class="btn-sos" title="Speak an emergency message with your location and sound an alarm">SOS</button>
+      <button id="boardBtn" class="btn-ghost" title="Talk by blinking">👁 Blink board</button>
       <button id="displayBtn" class="btn-ghost" title="Show the phrase in large text to the person you are talking to">Show to listener</button>
       <span id="cameraBadge" class="badge">Camera</span>
       <span id="ttsBadge" class="badge">Speech</span>
+      <span id="gpsBadge" class="badge">GPS off</span>
     </div>
   </header>
 
   <main class="container">
     <section class="panel">
       <div class="video-wrap">
-        <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed with hand tracking" />
+        <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Live camera feed with hand and eye tracking" />
         <div id="countdown" class="countdown" hidden></div>
       </div>
 
@@ -36,8 +38,13 @@
 
       <div class="controls">
         <button id="trainBtn" class="btn-primary">+ Train new gesture</button>
+        <button id="usualBtn" class="btn-secondary" title="Speak your usual order / request for this place">My usual</button>
+        <button id="medicalBtn" class="btn-secondary" title="Speak your medical card">Medical info</button>
+      </div>
+      <div class="controls">
         <label class="toggle"><input type="checkbox" id="muteToggle" /> Mute speaker</label>
         <label class="toggle"><input type="checkbox" id="browserVoiceToggle" /> Speak in browser</label>
+        <label class="toggle"><input type="checkbox" id="autoLearnToggle" /> Learn from use</label>
       </div>
 
       <div class="voice-row" id="voiceRow">
@@ -50,7 +57,7 @@
       </div>
 
       <form id="speakForm" class="speak-form">
-        <input id="speakInput" type="text" maxlength="300" placeholder="Type a message to speak..." aria-label="Message to speak" />
+        <input id="speakInput" type="text" maxlength="300" placeholder="Type a message to speak..." aria-label="Message to speak" list="wordSuggestions" />
         <button type="submit" class="btn-secondary">Speak</button>
       </form>
 
@@ -62,19 +69,91 @@
       <div class="card">
         <div class="label">Current context</div>
         <div class="value" id="contextValue">-</div>
+        <div class="muted small" id="placeValue"></div>
       </div>
       <div class="card">
         <div class="label">Detected gesture</div>
-        <div class="value" id="gestureValue">-</div>
+        <div class="value-row">
+          <div class="value" id="gestureValue">-</div>
+          <button id="wrongBtn" class="btn-ghost small" title="Teach GestureTalk what that gesture really was">Wrong?</button>
+        </div>
       </div>
       <div class="card highlight">
         <div class="label">Spoken phrase</div>
         <div class="value phrase" id="phraseValue" aria-live="polite">-</div>
       </div>
+      <p class="muted small" id="learnInfo"></p>
 
       <h2 class="section-title">History</h2>
       <ol id="historyList" class="history"><li class="muted">Nothing spoken yet.</li></ol>
     </aside>
+
+    <!-- Eyes -->
+    <section class="panel">
+      <h2 class="section-title">👁 Eye blink communication</h2>
+      <p class="muted small">For people who cannot move – communicate with blinks only. A caregiver sets the mode once; it is remembered.</p>
+      <div class="eye-modes" role="radiogroup" aria-label="Eye mode">
+        <label><input type="radio" name="eyeMode" value="off" checked /> Off</label>
+        <label><input type="radio" name="eyeMode" value="patterns" /> Yes / No blinks</label>
+        <label><input type="radio" name="eyeMode" value="board" /> Blink board</label>
+      </div>
+      <div class="eye-status">
+        <span id="faceBadge" class="badge">Face: -</span>
+        <span id="eyeBadge" class="badge">Eyes: -</span>
+        <span id="blinkBadge" class="badge">Last blink: -</span>
+      </div>
+      <table class="legend">
+        <tr><td>2 quick blinks</td><td id="legend_blink_x2">Yes</td></tr>
+        <tr><td>3 quick blinks</td><td id="legend_blink_x3">No</td></tr>
+        <tr><td>Long blink (~1 s)</td><td id="legend_long_blink">I need help</td></tr>
+        <tr><td>Very long blink (~2 s)</td><td>Open the blink board</td></tr>
+      </table>
+      <p class="muted small">On the blink board, items light up one after another – a <strong>long blink</strong> selects the lit item. Space bar / click also selects (for testing or caregivers).</p>
+    </section>
+
+    <!-- Places + GPS -->
+    <section class="panel">
+      <div class="section-head">
+        <h2 class="section-title">📍 My places (GPS)</h2>
+        <label class="toggle"><input type="checkbox" id="gpsToggle" /> Use GPS</label>
+      </div>
+      <p class="muted small" id="gpsInfo">Save the places you visit. When you arrive, the context switches automatically and “My usual” knows your regular order.</p>
+      <label class="toggle"><input type="checkbox" id="autoContextToggle" checked /> Switch context automatically when I arrive</label>
+      <ul id="placeList" class="place-list"></ul>
+      <form id="placeForm" class="place-form">
+        <input id="placeName" placeholder="Place name, e.g. Corner Café" maxlength="60" required aria-label="Place name" />
+        <select id="placeContext" aria-label="Place context">
+          {% for ctx in contexts %}<option value="{{ ctx }}">{{ ctx|capitalize }}</option>{% endfor %}
+        </select>
+        <input id="placeUsual" placeholder="My usual here, e.g. Large oat latte, no sugar" maxlength="300" aria-label="Usual order or request" />
+        <div class="place-actions">
+          <span class="muted small" id="placeCoords">Uses your current GPS position</span>
+          <button type="submit" class="btn-primary">Save this place</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Medical card -->
+    <section class="panel wide">
+      <div class="section-head">
+        <h2 class="section-title">🏥 My medical card</h2>
+        <span class="muted small">Spoken with “Medical info”, the blink board, or <code>{medical}</code> in any phrase. Stored only on this computer.</span>
+      </div>
+      <form id="profileForm" class="profile-form">
+        <label>Name <input name="name" maxlength="300" /></label>
+        <label>Conditions <input name="conditions" maxlength="300" placeholder="e.g. ALS, diabetes" /></label>
+        <label>Allergies <input name="allergies" maxlength="300" placeholder="e.g. penicillin" /></label>
+        <label>Medications <input name="medications" maxlength="300" /></label>
+        <label>Blood type <input name="blood_type" maxlength="300" /></label>
+        <label>Emergency contact <input name="emergency_contact" maxlength="300" /></label>
+        <label>Emergency phone <input name="emergency_phone" maxlength="300" /></label>
+        <label>Other notes <input name="notes" maxlength="300" /></label>
+        <div class="profile-actions">
+          <p class="muted small" id="medicalPreview"></p>
+          <button type="submit" class="btn-primary">Save medical card</button>
+        </div>
+      </form>
+    </section>
 
     <section class="panel wide">
       <div class="section-head">
@@ -87,16 +166,40 @@
           <tbody id="gestureBody"></tbody>
         </table>
       </div>
-      <p class="muted small">Built-in gestures work without training. Training a gesture with the same name improves its recognition.</p>
+      <p class="muted small">Built-in gestures work without training and get more accurate as you use them. Phrases can use
+        <code>{usual|fallback}</code>, <code>{medical}</code>, <code>{place}</code> and <code>{name}</code>.</p>
     </section>
   </main>
 
+  <datalist id="wordSuggestions"></datalist>
+
+  <!-- Listener display -->
   <div id="listenerView" class="listener" hidden role="dialog" aria-label="Listener display">
     <div class="listener-context" id="listenerContext"></div>
     <div class="listener-phrase" id="listenerPhrase" aria-live="assertive"></div>
+    <a id="listenerMap" class="listener-map" target="_blank" rel="noopener" hidden>Open location on map</a>
     <button id="closeListener" class="btn-ghost">Close (Esc)</button>
   </div>
 
+  <!-- Blink board -->
+  <div id="board" class="board" hidden role="dialog" aria-label="Blink board">
+    <div class="board-top">
+      <div class="board-text" id="boardText" aria-live="polite"><span class="muted">Spell a message…</span></div>
+      <div class="board-meta">
+        <span id="boardEye" class="badge">Eyes</span>
+        <label class="muted small">Scan speed
+          <input id="scanSpeed" type="range" min="0.6" max="3" step="0.2" value="1.4" aria-label="Scan speed in seconds" />
+          <span id="scanSpeedValue">1.4s</span>
+        </label>
+        <button id="closeBoard" class="btn-ghost small">Close</button>
+      </div>
+    </div>
+    <p class="board-hint" id="boardHint">Long blink to choose the highlighted group</p>
+    <div class="board-grid" id="boardGrid"></div>
+    <div class="board-spoken" id="boardSpoken" aria-live="assertive"></div>
+  </div>
+
+  <!-- Train / edit dialog -->
   <dialog id="trainDialog">
     <form id="trainForm" method="dialog">
       <h2 id="dialogTitle">Train a gesture</h2>
@@ -116,6 +219,23 @@
         <button type="button" id="cancelBtn" class="btn-ghost">Cancel</button>
         <button type="button" id="captureBtn" class="btn-secondary">Capture</button>
         <button type="submit" id="saveBtn" class="btn-primary" disabled>Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Correction dialog -->
+  <dialog id="wrongDialog">
+    <form id="wrongForm" method="dialog">
+      <h2>What did you mean?</h2>
+      <p class="muted small">GestureTalk will remember your last hand pose as this gesture.</p>
+      <label>Correct gesture
+        <input id="wrongName" list="gestureNames" required maxlength="40" />
+      </label>
+      <datalist id="gestureNames"></datalist>
+      <p id="wrongMessage" class="message" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" id="wrongCancel" class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Teach</button>
       </div>
     </form>
   </dialog>

@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from config import CONTEXTS, PHRASES_FILE
 
 DEFAULT_PHRASES: Dict[str, Dict[str, str]] = {
-    "thumbs_up": {"cafe": "One coffee please", "hospital": "I am okay",
+    "thumbs_up": {"cafe": "{usual|One coffee please}", "hospital": "I am okay",
                   "college": "Present", "bank": "Confirm"},
     "thumbs_down": {"cafe": "I don't like this", "hospital": "I feel unwell",
                     "college": "I disagree", "bank": "That is not correct"},
@@ -19,6 +19,11 @@ DEFAULT_PHRASES: Dict[str, Dict[str, str]] = {
               "college": "I have a question", "bank": "I need help with this"},
     "fist": {"cafe": "Bill please", "hospital": "I am in pain",
              "college": "I am ready", "bank": "Withdraw money"},
+    # Eye-blink patterns
+    "blink_x2": {"cafe": "Yes", "hospital": "Yes", "college": "Yes", "bank": "Yes"},
+    "blink_x3": {"cafe": "No", "hospital": "No", "college": "No", "bank": "No"},
+    "long_blink": {"cafe": "I need help", "hospital": "Please call the nurse",
+                   "college": "I need help", "bank": "I need help"},
 }
 
 

@@ -3,7 +3,7 @@ from phrases import PhraseBook
 
 def test_defaults_and_fallback(tmp_path):
     book = PhraseBook(str(tmp_path / "p.json"))
-    assert book.get("thumbs_up", "cafe") == "One coffee please"
+    assert book.get("thumbs_up", "cafe") == "{usual|One coffee please}"
     assert book.get("thumbs_up", "hospital") == "I am okay"
     assert book.get("unknown_gesture", "cafe") == "Unknown gesture"
 

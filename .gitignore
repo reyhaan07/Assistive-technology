@@ -10,3 +10,6 @@ __pycache__/
 gestures.json
 phrases.json
 *.json.tmp
+places.json
+profile.json
+usage.json

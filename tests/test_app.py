@@ -4,7 +4,9 @@ import pytest
 
 from app import Announcer, clean_gesture_name, create_app
 from gestures import GestureStore, normalize_landmarks
+from learning import UsageStats
 from phrases import PhraseBook
+from places import PlaceBook
 from tests.hands import make_hand
 
 
@@ -27,6 +29,20 @@ class FakeCamera:
     def generate_mjpeg_stream(self):
         yield b""
 
+    # eye tracking hooks
+    eye_tracking = False
+    blink_queue = None
+
+    def set_eye_tracking(self, enabled):
+        self.eye_tracking = enabled
+
+    def pop_blink_events(self):
+        events, self.blink_queue = list(self.blink_queue or []), []
+        return events
+
+    def get_eye_status(self):
+        return {"face": True, "closed": False, "enabled": self.eye_tracking, "error": ""}
+
 
 class FakeTTS:
     available = True
@@ -46,7 +62,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr("app.CAPTURE_TIMEOUT_SECONDS", 0.5)
     camera, tts = FakeCamera(), FakeTTS()
     app = create_app(camera, tts, GestureStore(str(tmp_path / "g.json")),
-                     PhraseBook(str(tmp_path / "p.json")))
+                     PhraseBook(str(tmp_path / "p.json")),
+                     PlaceBook(str(tmp_path / "places.json"), str(tmp_path / "profile.json")),
+                     UsageStats(str(tmp_path / "usage.json")))
     return app.test_client(), app.config["TALK"], camera, tts
 
 
@@ -148,3 +166,115 @@ def test_speak_and_mute(env):
     assert client.get("/get_state").get_json()["muted"] is True
     client.post("/speak", json={"text": "Silent"})
     assert tts.spoken == ["Good morning"]
+
+
+# ---------------------------------------------------------------- GPS places
+CAFE = {"lat": 51.5007, "lon": -0.1246}
+
+
+def test_places_auto_context_and_usual_order(env):
+    client, talk, camera, tts = env
+    assert client.post("/places", json={"name": "x"}).status_code == 400
+    res = client.post("/places", json={"name": "Corner Cafe", "context": "cafe", **CAFE,
+                                       "radius": 100, "usual": "Large oat latte, no sugar"})
+    place = res.get_json()
+    assert res.status_code == 200 and place["id"]
+
+    client.post("/set_context", json={"context": "bank"})
+    res = client.post("/location", json={"lat": CAFE["lat"] + 0.0002, "lon": CAFE["lon"], "accuracy": 10})
+    body = res.get_json()
+    assert body["arrived"] and body["context"] == "cafe"
+    state = client.get("/get_state").get_json()
+    assert state["place"]["name"] == "Corner Cafe"
+
+    camera.gesture = "thumbs_up"
+    talk.step(now=0)
+    assert tts.spoken[-1] == "Large oat latte, no sugar"
+
+    # place centre learns from the accurate fix
+    assert client.get("/places").get_json()["places"][0]["visits"] == 1
+
+    # leaving -> no place, fallback still uses the cafe's usual order
+    client.post("/location", json={"lat": 40.0, "lon": -3.0})
+    assert client.get("/get_state").get_json()["place"] is None
+
+    assert client.put(f"/places/{place['id']}", json={"usual": ""}).status_code == 200
+    camera.gesture = "none"; talk.step(now=1)
+    camera.gesture = "thumbs_up"; talk.step(now=2)
+    assert tts.spoken[-1] == "One coffee please"
+
+    assert client.delete(f"/places/{place['id']}").status_code == 200
+    assert client.delete(f"/places/{place['id']}").status_code == 404
+
+
+def test_auto_context_can_be_disabled(env):
+    client, *_ = env
+    client.post("/places", json={"name": "Clinic", "context": "hospital", **CAFE})
+    client.post("/set_auto_context", json={"enabled": False})
+    client.post("/location", json=CAFE)
+    assert client.get("/get_state").get_json()["context"] == "cafe"
+
+
+def test_bad_location(env):
+    client, *_ = env
+    assert client.post("/location", json={"lat": "x"}).status_code == 400
+    assert client.post("/location", json={"lat": 100, "lon": 0}).status_code == 400
+
+
+def test_medical_card_and_sos_with_location(env):
+    client, talk, camera, tts = env
+    res = client.put("/profile", json={"name": "Sam", "allergies": "penicillin",
+                                       "emergency_contact": "Alex", "emergency_phone": "555 0100"})
+    text = res.get_json()["medical_text"]
+    assert "Sam" in text and "penicillin" in text and "555 0100" in text
+
+    client.post("/speak", json={"text": "{medical}"})
+    assert "allergic to penicillin" in tts.spoken[-1]
+
+    client.post("/location", json=CAFE)
+    res = client.post("/speak", json={"text": "Emergency!", "source": "sos"}).get_json()
+    assert "latitude" in res["phrase"] and res["location"]["lat"] == CAFE["lat"]
+    assert res["contact"] == "555 0100"
+
+
+# ---------------------------------------------------------------- eyes
+def test_blink_patterns_speak_and_open_board(env):
+    client, talk, camera, tts = env
+    assert client.post("/set_eye_mode", json={"mode": "bogus"}).status_code == 400
+    assert client.post("/set_eye_mode", json={"mode": "patterns"}).get_json()["mode"] == "patterns"
+    assert camera.eye_tracking is True
+
+    camera.blink_queue = [{"id": 1, "kind": "short", "time": 0.0}, {"id": 2, "kind": "short", "time": 0.4}]
+    talk.step(now=0.5)
+    talk.step(now=2.0)
+    assert tts.spoken[-1] == "Yes"
+
+    client.post("/set_context", json={"context": "hospital"})
+    camera.blink_queue = [{"id": 3, "kind": "long", "time": 3.0}]
+    talk.step(now=3.1)
+    assert tts.spoken[-1] == "Please call the nurse"
+
+    camera.blink_queue = [{"id": 4, "kind": "very_long", "time": 5.0}]
+    talk.step(now=5.1)
+    state = client.get("/get_state").get_json()
+    assert state["eye"]["mode"] == "board" and state["eye"]["last_blink"]["id"] == 4
+
+    client.post("/set_eye_mode", json={"mode": "off"})
+    assert camera.eye_tracking is False
+
+
+# ---------------------------------------------------------------- learning
+def test_correction_and_suggestions(env):
+    client, talk, camera, tts = env
+    assert client.post("/correct", json={"gesture_name": "water"}).status_code == 400
+    camera.landmarks = normalize_landmarks(make_hand(extended=("index",)))
+    camera.get_latest_landmarks = lambda: camera.landmarks
+    res = client.post("/correct", json={"gesture_name": "water"})
+    assert res.status_code == 200
+    assert talk.store.sample_counts()["water"] == 3
+
+    client.post("/speak", json={"text": "I need water please"})
+    client.post("/speak", json={"text": "water again"})
+    data = client.get("/suggest?prefix=wa").get_json()
+    assert data["words"][0] == "water"
+    assert "I need water please" in data["phrases"]

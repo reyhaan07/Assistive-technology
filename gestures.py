@@ -123,6 +123,25 @@ class GestureStore:
                 bucket.append(np.asarray(sample, dtype=np.float32).copy())
             self.save()
 
+    def learn_sample(self, name: str, landmarks: np.ndarray, min_novelty: float,
+                     max_samples: int) -> bool:
+        """Add a sample seen during normal use, if it teaches something new.
+
+        Old samples are dropped once `max_samples` is reached, so the model keeps
+        adapting to how the user makes the gesture today.
+        """
+        name = name.lower().strip()
+        sample = np.asarray(landmarks, dtype=np.float32).copy()
+        with self._lock:
+            bucket = self._gestures.setdefault(name, [])
+            if bucket and min(gesture_distance(sample, s) for s in bucket) < min_novelty:
+                return False
+            bucket.append(sample)
+            if len(bucket) > max_samples:
+                del bucket[0: len(bucket) - max_samples]
+            self.save()
+            return True
+
     def delete_gesture(self, name: str) -> bool:
         with self._lock:
             removed = self._gestures.pop(name.lower().strip(), None) is not None
