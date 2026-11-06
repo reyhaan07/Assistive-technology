@@ -199,6 +199,7 @@ async function refreshState() {
     setActiveContext(data.context);
     renderHistory(data.history);
     renderEye(data.eye);
+    renderGps(data.gps);
     setBadge(els.cameraBadge, data.camera_ok, 'Camera on', 'No camera');
     setBadge(els.ttsBadge, data.tts_available && !data.muted, 'Speaker on',
       data.tts_available ? 'Speaker muted' : 'No speaker');
@@ -641,41 +642,50 @@ const board = (() => {
 $('boardBtn').addEventListener('click', () => setEyeMode('board'));
 
 // ---------------------------------------------------------------- GPS places
-const gps = { watchId: null, lastSent: null, lastSentTime: 0 };
+const gps = { watchId: null, lastSentTime: 0 };
 
-function distanceM(a, b) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lon - a.lon);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
+
+const MAX_ACCURACY_M = 100; // fixes worse than this are never used for place decisions
+
+const GPS_STATUS_TEXT = {
+  measuring: 'Collecting GPS readings…',
+  weak: 'GPS signal too weak to decide places – move near a window or outside.',
+  ambiguous: 'Two saved places are too close to tell apart right now – not switching.',
+  uncertain: 'Near a saved place, waiting for a more precise position…',
+  inside: 'GPS working – you are at a saved place.',
+  outside: 'GPS working – not at a saved place.',
+};
+
+function renderGps(gpsState) {
+  if (!gpsState || !gpsState.status || gps.watchId === null) return;
+  const est = gpsState.estimate;
+  let text = GPS_STATUS_TEXT[gpsState.status] || '';
+  if (gpsState.status === 'confirming' && gpsState.confirming) {
+    const c = gpsState.confirming;
+    text = c.place ? `Confirming arrival at ${c.place}… ${c.seconds_left}s` : `Confirming you left… ${c.seconds_left}s`;
+  }
+  if (est) text += ` (±${Math.round(est.accuracy)} m from ${est.fixes} readings)`;
+  $('gpsInfo').textContent = text;
 }
-
-const MAX_ACCURACY_M = 500; // same limit as the server
 
 async function sendLocation(pos) {
   const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
   const weak = loc.accuracy > MAX_ACCURACY_M;
   state.location = loc;
-  $('placeCoords').textContent = weak
-    ? `Position too rough to save a place (±${Math.round(loc.accuracy)} m)`
-    : `Current position ±${Math.round(loc.accuracy)} m`;
   setBadge(els.gpsBadge, !weak, `GPS ±${Math.round(loc.accuracy)} m`, `GPS weak ±${Math.round(loc.accuracy)} m`);
-  $('gpsInfo').textContent = weak
-    ? 'Location is only approximate (probably Wi-Fi based). Places will not switch until it improves – '
-      + 'go near a window/outside, or open GestureTalk on your phone (see README: --https).'
-    : 'GPS is working. When you arrive at a saved place, the context switches automatically.';
 
+  // Send every fix (max one per 2 s): the server averages them for accuracy.
   const now = Date.now();
-  if (gps.lastSent && distanceM(gps.lastSent, loc) < 15 && now - gps.lastSentTime < 20000
-      && Math.abs(gps.lastSent.accuracy - loc.accuracy) < 25) return;
-  gps.lastSent = loc;
+  if (now - gps.lastSentTime < 2000) return;
   gps.lastSentTime = now;
   try {
     const data = await api('/location', { method: 'POST', body: loc });
+    renderGps(data);
     if (data.arrived && data.place) {
-      show(els.message, `📍 Arrived at ${data.place.name} – context set to ${data.context}`, 'ok');
+      show(els.message, `📍 Arrived at ${data.place.name} – context set to ${data.place.context}`, 'ok');
+      refreshState();
+    } else if (data.left) {
+      show(els.message, '📍 Left the saved place', 'ok');
       refreshState();
     }
   } catch (err) {
@@ -702,7 +712,7 @@ function startGps() {
   gps.watchId = navigator.geolocation.watchPosition(sendLocation, (err) => {
     setBadge(els.gpsBadge, false, '', 'GPS blocked');
     show(els.message, `GPS: ${err.message}`, 'error');
-  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
 }
 
 function stopGps() {
@@ -770,31 +780,45 @@ async function loadPlaces() {
   }
 }
 
+let savingPlace = false;
 $('placeForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!state.location) {
-    show(els.message, 'Turn on “Use GPS” and wait for a position before saving a place.', 'error');
+  if (savingPlace) return;
+  if (gps.watchId === null) {
+    show(els.message, 'Turn on “Use GPS” first.', 'error');
     return;
   }
-  if (state.location.accuracy > MAX_ACCURACY_M) {
-    show(els.message, `Location is too rough (±${Math.round(state.location.accuracy)} m) to save a place. Try outside or on your phone.`, 'error');
-    return;
-  }
+  const btn = e.target.querySelector('button[type=submit]');
+  savingPlace = true;
+  btn.disabled = true;
+  const body = { name: $('placeName').value, context: $('placeContext').value, usual: $('placeUsual').value, use_current: true };
+  const radius = Number($('placeRadius').value);
+  if (radius) body.radius = radius;
+  const started = Date.now();
   try {
-    const place = await api('/places', {
-      method: 'POST',
-      body: {
-        name: $('placeName').value, context: $('placeContext').value, usual: $('placeUsual').value,
-        lat: state.location.lat, lon: state.location.lon, accuracy: state.location.accuracy,
-        radius: Math.max(80, Math.min(400, (state.location.accuracy || 0) * 2)),
-      },
-    });
-    e.target.reset();
-    show(els.message, `Saved ${place.name}`, 'ok');
-    gps.lastSent = null;
-    loadPlaces();
+    // The server only saves once it has a precise, averaged position (can take up to ~1 min).
+    while (true) {
+      const res = await fetch('/places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        e.target.reset();
+        show(els.message, `Saved ${data.name} (accurate to within ${Math.round(data.radius)} m zone)`, 'ok');
+        loadPlaces();
+        break;
+      }
+      if (res.status !== 409) throw new Error(data.error || 'Could not save place');
+      const waited = Math.round((Date.now() - started) / 1000);
+      if (waited > 90) throw new Error(`${data.error} – gave up after 90 s. Try near a window or outside.`);
+      $('placeCoords').textContent = `${data.error} ${waited}s`;
+      show(els.message, `📍 Stay still – measuring your exact position… ${waited}s`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   } catch (err) {
     show(els.message, err.message, 'error');
+  } finally {
+    savingPlace = false;
+    btn.disabled = false;
+    $('placeCoords').textContent = 'Stand still where you want the place to be';
   }
 });
 

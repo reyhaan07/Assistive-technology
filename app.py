@@ -11,7 +11,6 @@ from config import (
     CERT_DIR,
     DEFAULT_EYE_MODE,
     MAX_LOCATION_ACCURACY_M,
-    PLACE_LEARN_MAX_ACCURACY_M,
     CAPTURE_SAMPLES,
     CAPTURE_TIMEOUT_SECONDS,
     CONTEXTS,
@@ -24,6 +23,7 @@ from config import (
     SPEECH_COOLDOWN_SECONDS,
 )
 from eyes import EYE_GESTURES, EYE_MODES, BlinkPatternDecoder
+from geo import LocationTracker
 from gestures import BUILTIN_GESTURES, GestureStore
 from learning import UsageStats
 from phrases import PhraseBook, humanize
@@ -83,9 +83,11 @@ class GestureTalk:
         self.last_blink = {"id": 0, "kind": None}
         self.last_pattern = None
 
-        self.location = None        # {"lat", "lon", "accuracy", "time"}
-        self.current_place = None   # place dict when inside a saved place
+        self.location = None        # last raw fix {"lat", "lon", "accuracy", "time"}
+        self.current_place = None   # confirmed place dict when inside a saved place
         self.auto_context = True
+        self.tracker = LocationTracker(places)
+        self.gps_status = {"status": "no_fix"}
 
         self.capture_lock = threading.Lock()
         self.captured_samples = []
@@ -166,33 +168,31 @@ class GestureTalk:
             self.announce(phrase, gesture, context)
 
     # -- GPS --------------------------------------------------------------------
-    def update_location(self, lat: float, lon: float, accuracy: Optional[float]) -> dict:
-        """Store the position; switch place only when the fix is accurate enough.
-
-        A very rough fix (Wi-Fi guess, indoors) is still kept for SOS, but it never
-        makes the user "arrive" at or "leave" a place, so it cannot cause wrong switches.
-        """
-        if accuracy is not None and accuracy > MAX_LOCATION_ACCURACY_M:
-            with self.state_lock:
-                self.location = {"lat": lat, "lon": lon, "accuracy": accuracy,
-                                 "time": time.strftime("%H:%M:%S"), "weak": True}
-                place = self.current_place
-            return {"place": place, "arrived": False, "ignored": True,
-                    "reason": f"Location too inaccurate (±{round(accuracy)} m) to match places"}
-        place = self.places.nearest(lat, lon)
-        if place and accuracy is not None and accuracy <= PLACE_LEARN_MAX_ACCURACY_M:
-            self.places.refine(place["id"], lat, lon)
+    def update_location(self, lat: float, lon: float, accuracy: Optional[float],
+                        now: Optional[float] = None) -> dict:
+        """Feed one GPS fix. Place changes happen only once the tracker is certain."""
+        now = time.time() if now is None else now
+        accuracy = 9999.0 if accuracy is None else accuracy  # unknown accuracy = never decisive
+        res = self.tracker.update(lat, lon, accuracy, now)
         with self.state_lock:
-            self.location = {"lat": lat, "lon": lon, "accuracy": accuracy, "time": time.strftime("%H:%M:%S")}
-            arrived = place and (not self.current_place or self.current_place["id"] != place["id"])
-            self.current_place = place
-            if place and self.auto_context and arrived:
-                self.state["context"] = place["context"]
-        return {"place": place, "arrived": bool(arrived)}
+            self.location = {"lat": lat, "lon": lon, "accuracy": accuracy,
+                             "time": time.strftime("%H:%M:%S"),
+                             "weak": accuracy > MAX_LOCATION_ACCURACY_M}
+            self.current_place = res["place"]
+            if res["arrived"] and self.auto_context:
+                self.state["context"] = res["place"]["context"]
+            self.gps_status = {"status": res["status"], "confirming": res.get("confirming"),
+                               "estimate": res.get("estimate")}
+        return {"place": res["place"], "arrived": res["arrived"], "left": res["left"],
+                "status": res["status"], "confirming": res.get("confirming"),
+                "estimate": res.get("estimate")}
 
     def location_text(self) -> str:
         with self.state_lock:
             loc, place = self.location, self.current_place
+        est = self.tracker.good_estimate()
+        if est and est["fixes"] >= 2:  # smoothed position is more accurate than one raw fix
+            loc = {"lat": est["lat"], "lon": est["lon"], "accuracy": est["accuracy"], "weak": False}
         if place:
             return f"I am at {place['name']}."
         if loc and loc.get("weak"):
@@ -239,6 +239,7 @@ class GestureTalk:
             snap["location"] = dict(self.location) if self.location else None
             snap["place"] = dict(self.current_place) if self.current_place else None
             snap["auto_context"] = self.auto_context
+            snap["gps"] = dict(self.gps_status)
         snap["learned_samples"] = int(getattr(self.camera, "learned_samples", 0))
         snap["auto_learn"] = bool(getattr(self.camera, "auto_learn", False))
         return snap
@@ -434,13 +435,22 @@ def create_app(camera, tts, store: Optional[GestureStore] = None,
             return jsonify({"places": talk.places.list(), "contexts": CONTEXTS,
                             "max_accuracy": MAX_LOCATION_ACCURACY_M})
         data = request.get_json(silent=True) or {}
-        try:
-            accuracy = float(data["accuracy"]) if data.get("accuracy") is not None else None
-        except (TypeError, ValueError):
-            accuracy = None
-        if accuracy is not None and accuracy > MAX_LOCATION_ACCURACY_M:
-            return error(f"Location is too inaccurate (±{round(accuracy)} m) to save a place. "
-                         "Go outside or use a phone with GPS and try again.")
+        if data.get("use_current"):
+            # Save from the smoothed, multi-reading GPS position (precise).
+            est, message = talk.tracker.save_estimate()
+            if est is None:
+                return jsonify({"error": message, "measuring": True}), 409
+            data = dict(data, lat=est["lat"], lon=est["lon"])
+            if not data.get("radius"):
+                data["radius"] = min(150, max(30, round(est["accuracy"] * 2.5)))
+        else:
+            try:
+                accuracy = float(data["accuracy"]) if data.get("accuracy") is not None else None
+            except (TypeError, ValueError):
+                accuracy = None
+            if accuracy is not None and accuracy > MAX_LOCATION_ACCURACY_M:
+                return error(f"Location is too inaccurate (±{round(accuracy)} m) to save a place. "
+                             "Go outside or use a phone with GPS and try again.")
         try:
             return jsonify(talk.places.add(data))
         except ValueError as exc:
@@ -451,6 +461,7 @@ def create_app(camera, tts, store: Optional[GestureStore] = None,
         if request.method == "DELETE":
             if not talk.places.delete(place_id):
                 return error("Place not found", 404)
+            talk.tracker.forget_place(place_id)
             with talk.state_lock:
                 if talk.current_place and talk.current_place["id"] == place_id:
                     talk.current_place = None

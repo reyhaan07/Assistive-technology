@@ -289,7 +289,7 @@ select {
 }
 .place-list .actions { display: flex; gap: 6px; flex-shrink: 0; }
 .place-form { display: grid; gap: 8px; grid-template-columns: 1fr 140px; }
-.place-form #placeUsual, .place-actions { grid-column: 1 / -1; }
+.place-form #placeUsual, .place-form #placeRadius, .place-actions { grid-column: 1 / -1; }
 .place-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .profile-form { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .profile-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: .85rem; }

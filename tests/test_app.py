@@ -172,30 +172,35 @@ def test_speak_and_mute(env):
 CAFE = {"lat": 51.5007, "lon": -0.1246}
 
 
+def stay(talk, lat, lon, seconds, acc=8, t0=0.0):
+    """Feed one accurate fix per second at a fixed spot; returns the end time."""
+    for i in range(seconds):
+        talk.update_location(lat, lon, acc, now=t0 + i)
+    return t0 + seconds
+
+
 def test_places_auto_context_and_usual_order(env):
     client, talk, camera, tts = env
     assert client.post("/places", json={"name": "x"}).status_code == 400
     res = client.post("/places", json={"name": "Corner Cafe", "context": "cafe", **CAFE,
-                                       "radius": 100, "usual": "Large oat latte, no sugar"})
+                                       "radius": 60, "usual": "Large oat latte, no sugar"})
     place = res.get_json()
     assert res.status_code == 200 and place["id"]
 
     client.post("/set_context", json={"context": "bank"})
-    res = client.post("/location", json={"lat": CAFE["lat"] + 0.0002, "lon": CAFE["lon"], "accuracy": 10})
-    body = res.get_json()
-    assert body["arrived"] and body["context"] == "cafe"
+    t = stay(talk, CAFE["lat"] + 0.0001, CAFE["lon"], 10)
+    assert client.get("/get_state").get_json()["context"] == "bank"  # still confirming
+    assert client.get("/get_state").get_json()["gps"]["status"] == "confirming"
+    t = stay(talk, CAFE["lat"] + 0.0001, CAFE["lon"], 20, t0=t)
     state = client.get("/get_state").get_json()
-    assert state["place"]["name"] == "Corner Cafe"
+    assert state["context"] == "cafe" and state["place"]["name"] == "Corner Cafe"
 
     camera.gesture = "thumbs_up"
     talk.step(now=0)
     assert tts.spoken[-1] == "Large oat latte, no sugar"
 
-    # place centre learns from the accurate fix
-    assert client.get("/places").get_json()["places"][0]["visits"] == 1
-
-    # leaving -> no place, fallback still uses the cafe's usual order
-    client.post("/location", json={"lat": 40.0, "lon": -3.0})
+    # leave: far away for long enough
+    t = stay(talk, 40.0, -3.0, 50, t0=t)
     assert client.get("/get_state").get_json()["place"] is None
 
     assert client.put(f"/places/{place['id']}", json={"usual": ""}).status_code == 200
@@ -207,12 +212,30 @@ def test_places_auto_context_and_usual_order(env):
     assert client.delete(f"/places/{place['id']}").status_code == 404
 
 
-def test_auto_context_can_be_disabled(env):
+def test_location_endpoint_smoke(env):
     client, *_ = env
+    body = client.post("/location", json={**CAFE, "accuracy": 8}).get_json()
+    assert body["status"] == "measuring" and body["arrived"] is False
+
+
+def test_save_place_from_measured_position(env):
+    client, talk, *_ = env
+    res = client.post("/places", json={"name": "Home cafe", "context": "cafe", "use_current": True})
+    assert res.status_code == 409 and res.get_json()["measuring"]
+    stay(talk, CAFE["lat"], CAFE["lon"], 12, acc=6)
+    res = client.post("/places", json={"name": "Home cafe", "context": "cafe", "use_current": True})
+    assert res.status_code == 200
+    place = res.get_json()
+    assert abs(place["lat"] - CAFE["lat"]) < 1e-5 and 30 <= place["radius"] <= 150
+
+
+def test_auto_context_can_be_disabled(env):
+    client, talk, *_ = env
     client.post("/places", json={"name": "Clinic", "context": "hospital", **CAFE})
     client.post("/set_auto_context", json={"enabled": False})
-    client.post("/location", json=CAFE)
-    assert client.get("/get_state").get_json()["context"] == "cafe"
+    stay(talk, CAFE["lat"], CAFE["lon"], 40)
+    state = client.get("/get_state").get_json()
+    assert state["place"]["name"] == "Clinic" and state["context"] == "cafe"
 
 
 def test_bad_location(env):
@@ -231,7 +254,7 @@ def test_medical_card_and_sos_with_location(env):
     client.post("/speak", json={"text": "{medical}"})
     assert "allergic to penicillin" in tts.spoken[-1]
 
-    client.post("/location", json=CAFE)
+    client.post("/location", json={**CAFE, "accuracy": 10})
     res = client.post("/speak", json={"text": "Emergency!", "source": "sos"}).get_json()
     assert "latitude" in res["phrase"] and res["location"]["lat"] == CAFE["lat"]
     assert res["contact"] == "555 0100"
@@ -283,19 +306,18 @@ def test_correction_and_suggestions(env):
 def test_inaccurate_fix_never_switches_or_leaves_place(env):
     client, talk, camera, tts = env
     client.post("/places", json={"name": "Clinic", "context": "hospital", **CAFE})
-    # rough Wi-Fi guess right on top of the clinic: ignored
-    res = client.post("/location", json={**CAFE, "accuracy": 2000}).get_json()
-    assert res["ignored"] and not res["arrived"]
-    assert client.get("/get_state").get_json()["context"] == "cafe"
+    # rough Wi-Fi guesses right on top of the clinic for a full minute: ignored
+    stay(talk, CAFE["lat"], CAFE["lon"], 60, acc=2000)
+    state = client.get("/get_state").get_json()
+    assert state["context"] == "cafe" and state["place"] is None and state["gps"]["status"] == "weak"
 
-    # good fix -> arrive
-    assert client.post("/location", json={**CAFE, "accuracy": 15}).get_json()["arrived"]
-    # rough fix far away does not make us "leave"
-    client.post("/location", json={"lat": 52.0, "lon": 0.5, "accuracy": 3000})
+    t = stay(talk, CAFE["lat"], CAFE["lon"], 30, acc=10, t0=100)
+    assert client.get("/get_state").get_json()["place"]["name"] == "Clinic"
+    # rough fixes far away do not make us "leave"
+    stay(talk, 52.0, 0.5, 90, acc=3000, t0=t)
     state = client.get("/get_state").get_json()
     assert state["place"]["name"] == "Clinic" and state["location"]["weak"]
 
-    # SOS still reports the (approximate) position
     res = client.post("/speak", json={"text": "Help", "source": "sos"}).get_json()
     assert "Clinic" in res["phrase"]
 

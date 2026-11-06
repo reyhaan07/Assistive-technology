@@ -55,6 +55,17 @@ AUTO_LEARN = True                 # add confidently recognised hand poses as new
 AUTO_LEARN_INTERVAL_SECONDS = 3.0
 AUTO_LEARN_MIN_NOVELTY = 0.04     # skip samples almost identical to stored ones
 MAX_SAMPLES_PER_GESTURE = 40
-PLACE_LEARN_MAX_ACCURACY_M = 50   # only GPS fixes this accurate refine a place's position
 MAX_LOCATION_ACCURACY_M = 500     # fixes less accurate than this never switch / match places
 CERT_DIR = os.path.join(DATA_DIR, "certs")
+
+# Accurate place detection (accuracy over speed: decisions can take up to ~1 min)
+GPS_WINDOW_SECONDS = 30           # fixes combined into one smoothed position
+GPS_MAX_FIX_ACCURACY_M = 100      # worse fixes are never used for place decisions
+GPS_MIN_FIXES = 3
+ARRIVE_DWELL_SECONDS = 20         # must be confidently inside this long before switching
+LEAVE_DWELL_SECONDS = 20
+SAVE_PLACE_MIN_FIXES = 5          # saving a place averages several readings...
+SAVE_PLACE_MIN_SECONDS = 10       # ...over at least this long...
+SAVE_PLACE_MAX_ACCURACY_M = 30    # ...until the position is this precise
+PLACE_REFINE_AFTER_SECONDS = 120  # learn a place's true centre only after staying
+PLACE_REFINE_MAX_ACCURACY_M = 20

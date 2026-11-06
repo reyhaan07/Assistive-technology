@@ -24,8 +24,14 @@ People with speech or hearing impairments often struggle with real-time communic
 * **Café → your regular order.** Each place stores "my usual", e.g. *"Large oat latte, no sugar"*. Thumbs-up at your café says it.
 * **Hospital → your medical card.** Name, conditions, allergies, medications, blood type and emergency contact are spoken with "Medical info" (or `{medical}` in any phrase).
 * **SOS includes your location** (place name or coordinates) and shows a map link and the emergency phone number.
-* Places learn: every accurate visit refines the saved position.
-* Readings worse than ±500 m (typical Wi-Fi guesses on a laptop, or indoors) are **never** used to arrive at or leave a place, and a place can't be saved from one – so a bad fix can't switch you to the wrong context. They are still used for SOS ("my approximate location…").
+* **Accuracy first** (decisions may take up to ~1 minute, but are not wrong):
+  * Readings are averaged over 30 s, weighting precise ones far more, and GPS "jumps" are thrown out.
+  * You only *arrive* when your whole uncertainty circle is (mostly) inside the place, after 20 s of agreeing readings; you only *leave* when clearly outside for 20 s.
+  * If two saved places are too close to tell apart with the current signal (two shops side by side indoors), it **does not guess** – it waits.
+  * Readings worse than ±100 m (Wi-Fi guesses, deep indoors) are never used for place decisions; they are still used for SOS ("my approximate location…").
+  * Saving a place measures for at least 10 s and only saves once the averaged position is within ±30 m. Choose the place size (shop / medium / hospital site) or leave it automatic.
+  * A place's centre is fine-tuned only after you have stayed there 2 minutes.
+* In simulated tests with realistic noise (60 visits each, ±5 m outdoors to ±40 m indoors): arrival 25–50 s after entering, leaving 35–60 s after exiting, **0 wrong arrivals** and **0 false departures** from GPS jumps. Real-world accuracy is limited by the phone itself (≈3–5 m outdoors, 10–50 m indoors).
 * Browsers only allow GPS on `https://` or `http://localhost` – see **Using your phone's GPS** below.
 
 ### 🧠 Gets more accurate the more you use it

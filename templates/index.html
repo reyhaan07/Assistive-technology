@@ -126,8 +126,14 @@
           {% for ctx in contexts %}<option value="{{ ctx }}">{{ ctx|capitalize }}</option>{% endfor %}
         </select>
         <input id="placeUsual" placeholder="My usual here, e.g. Large oat latte, no sugar" maxlength="300" aria-label="Usual order or request" />
+        <select id="placeRadius" aria-label="Place size">
+          <option value="">Size: automatic</option>
+          <option value="25">Small (25 m) – a shop</option>
+          <option value="60">Medium (60 m)</option>
+          <option value="150">Large (150 m) – a hospital site</option>
+        </select>
         <div class="place-actions">
-          <span class="muted small" id="placeCoords">Uses your current GPS position</span>
+          <span class="muted small" id="placeCoords">Stand still where you want the place to be</span>
           <button type="submit" class="btn-primary">Save this place</button>
         </div>
       </form>
